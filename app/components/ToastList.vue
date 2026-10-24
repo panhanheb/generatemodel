@@ -6,43 +6,43 @@ const { toasts, removeToast } = useToast()
 </script>
 
 <template>
-  <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+  <div class="fixed top-4 inset-x-0 mx-auto z-50 flex flex-col items-center gap-2 max-w-sm sm:max-w-md w-full px-4 pointer-events-none">
     <TransitionGroup
       name="toast"
-      enter-active-class="transition duration-300 ease-out transform"
-      enter-from-class="translate-y-2 opacity-0 scale-95"
+      enter-active-class="transition duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] transform"
+      enter-from-class="-translate-y-6 opacity-0 scale-95"
       enter-to-class="translate-y-0 opacity-100 scale-100"
-      leave-active-class="transition duration-200 ease-in transform"
+      leave-active-class="transition duration-250 ease-in transform"
       leave-from-class="translate-y-0 opacity-100 scale-100"
-      leave-to-class="translate-y-2 opacity-0 scale-95"
+      leave-to-class="-translate-y-6 opacity-0 scale-95"
     >
       <div
         v-for="toast in toasts"
         :key="toast.id"
-        class="pointer-events-auto flex items-start gap-3 p-4 rounded-xl border shadow-lg backdrop-blur-md"
+        class="pointer-events-auto flex items-center gap-3 px-4 py-2.5 rounded-full border shadow-[0_16px_36px_rgba(0,0,0,0.4),inset_0_1px_1px_rgba(255,255,255,0.4)] backdrop-blur-2xl transition-all duration-300 w-full"
         :class="{
-          'bg-white/95 dark:bg-slate-900/95 border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400': toast.type === 'success',
-          'bg-white/95 dark:bg-slate-900/95 border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400': toast.type === 'error',
-          'bg-white/95 dark:bg-slate-900/95 border-amber-200 dark:border-amber-500/20 text-amber-600 dark:text-amber-400': toast.type === 'warning',
-          'bg-white/95 dark:bg-slate-900/95 border-blue-200 dark:border-blue-500/20 text-blue-600 dark:text-blue-400': toast.type === 'info'
+          'bg-emerald-950/70 border-emerald-400/40 text-emerald-200': toast.type === 'success',
+          'bg-rose-950/70 border-rose-400/40 text-rose-200': toast.type === 'error',
+          'bg-amber-950/70 border-amber-400/40 text-amber-200': toast.type === 'warning',
+          'bg-slate-900/80 border-white/20 text-white': toast.type === 'info'
         }"
       >
-        <div class="flex-shrink-0 mt-0.5">
-          <CheckCircle2 v-if="toast.type === 'success'" class="w-5 h-5" />
-          <XCircle v-else-if="toast.type === 'error'" class="w-5 h-5" />
-          <AlertTriangle v-else-if="toast.type === 'warning'" class="w-5 h-5" />
-          <Info v-else class="w-5 h-5" />
+        <div class="shrink-0">
+          <CheckCircle2 v-if="toast.type === 'success'" class="w-4 h-4 text-emerald-400" />
+          <XCircle v-else-if="toast.type === 'error'" class="w-4 h-4 text-rose-400" />
+          <AlertTriangle v-else-if="toast.type === 'warning'" class="w-4 h-4 text-amber-400" />
+          <Info v-else class="w-4 h-4 text-blue-400" />
         </div>
 
-        <div class="flex-1 text-sm font-semibold text-slate-800 dark:text-slate-200">
+        <div class="flex-1 text-xs font-semibold truncate">
           {{ toast.message }}
         </div>
 
         <button
           @click="removeToast(toast.id)"
-          class="flex-shrink-0 text-slate-455 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-0.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5"
+          class="shrink-0 p-1 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-colors cursor-pointer active:scale-90"
         >
-          <X class="w-4 h-4" />
+          <X class="w-3.5 h-3.5" />
         </button>
       </div>
     </TransitionGroup>
@@ -51,6 +51,6 @@ const { toasts, removeToast } = useToast()
 
 <style scoped>
 .toast-move {
-  transition: transform 0.3s ease;
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
 }
 </style>

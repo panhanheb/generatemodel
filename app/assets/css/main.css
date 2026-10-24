@@ -3,38 +3,61 @@
 /* Enable class-based dark mode in Tailwind v4 */
 @variant dark (&:where(.dark, .dark *));
 
-/* Define modern fonts and semantic CSS variables */
+/* iOS 27 Liquid Glass Design Tokens & System Typography */
 :root {
-  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", system-ui, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
   
-  --color-primary: #2563eb;
-  --color-secondary: #7c3aed;
-  --color-bg: #ffffff;
-  --color-card: #f8fafc;
-  --color-border: #e2e8f0;
-  --color-text: #0f172a;
-  --color-text-secondary: #475569;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-danger: #ef4444;
+  /* Glass Intensity Parameters (slider drives --glass-intensity 0-100) */
+  --glass-intensity: 45;
+  --glass-blur: calc(16px + (var(--glass-intensity) * 0.18px));
+  --glass-opacity: calc(0.40 + (var(--glass-intensity) * 0.004));
+  
+  /* Light Theme Glass Tokens */
+  --color-primary: #007aff;
+  --color-secondary: #5856d6;
+  --color-bg: #f2f2f7;
+  --color-card: rgba(255, 255, 255, 0.75);
+  --color-border: rgba(0, 0, 0, 0.08);
+  --color-text: #1c1c1e;
+  --color-text-secondary: #8e8e93;
+  --color-success: #34c759;
+  --color-warning: #ff9500;
+  --color-danger: #ff3b30;
+
+  --glass-surface: rgba(255, 255, 255, var(--glass-opacity));
+  --glass-card-bg: rgba(255, 255, 255, calc(var(--glass-opacity) + 0.15));
+  --glass-border-color: rgba(0, 0, 0, 0.08);
+  --glass-highlight-color: rgba(255, 255, 255, 0.85);
+  --glass-shadow-ambient: 0 16px 36px -8px rgba(0, 0, 0, 0.08);
+  
+  --spring-bounce: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .dark {
-  --color-primary: #3b82f6;
-  --color-bg: #020617;
-  --color-surface: #0f172a;
-  --color-card: #111827;
-  --color-border: #334155;
-  --color-text: #f8fafc;
-  --color-text-secondary: #94a3b8;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-danger: #ef4444;
+  /* Dark Theme Glass Tokens */
+  --color-primary: #0a84ff;
+  --color-secondary: #5e5ce6;
+  --color-bg: #000000;
+  --color-surface: #12141c;
+  --color-card: rgba(28, 30, 42, 0.7);
+  --color-border: rgba(255, 255, 255, 0.12);
+  --color-text: #ffffff;
+  --color-text-secondary: #98989d;
+  --color-success: #30d158;
+  --color-warning: #ff9f0a;
+  --color-danger: #ff453a;
+
+  --glass-surface: rgba(18, 22, 32, var(--glass-opacity));
+  --glass-card-bg: rgba(24, 28, 40, calc(var(--glass-opacity) + 0.12));
+  --glass-border-color: rgba(255, 255, 255, 0.14);
+  --glass-highlight-color: rgba(255, 255, 255, 0.28);
+  --glass-shadow-ambient: 0 20px 48px -12px rgba(0, 0, 0, 0.65);
 }
 
-/* Map CSS variables to Tailwind v4 theme utility classes */
 @theme {
   --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
   
   --color-brand-primary: var(--color-primary);
   --color-brand-secondary: var(--color-secondary);
@@ -57,15 +80,16 @@ html, body {
   font-family: var(--font-sans);
   margin: 0;
   padding: 0;
-  transition: background-color 0.2s ease, color 0.2s ease;
   overflow-x: hidden;
   height: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Elegant Scrollbars */
+/* iOS Elegant Scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -73,168 +97,150 @@ html, body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: rgba(255, 255, 255, 0.18);
   border-radius: 9999px;
 }
 
-.dark ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-}
-
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.35);
 }
 
-/* VisionOS / Apple Style Frosted Glass Utilities */
+:root:not(.dark) ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+:root:not(.dark) ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* Apple iOS 27 Liquid Glass Surface Classes */
 .glass-panel {
-  background: rgba(18, 20, 28, 0.62);
-  backdrop-filter: blur(28px) saturate(190%);
-  -webkit-backdrop-filter: blur(28px) saturate(190%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.18), 0 16px 40px -8px rgba(0, 0, 0, 0.6);
+  background: var(--glass-surface);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border-color);
+  box-shadow: inset 0 1px 1px 0 var(--glass-highlight-color), var(--glass-shadow-ambient);
 }
 
-.glass-header {
-  background: rgba(12, 14, 22, 0.58);
-  backdrop-filter: blur(24px) saturate(190%);
-  -webkit-backdrop-filter: blur(24px) saturate(190%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
-}
-
-.glass-sidebar {
-  background: rgba(14, 16, 24, 0.55);
-  backdrop-filter: blur(32px) saturate(190%);
-  -webkit-backdrop-filter: blur(32px) saturate(190%);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
-}
-
-.glass-activity-bar {
-  background: rgba(10, 12, 18, 0.52);
-  backdrop-filter: blur(32px) saturate(190%);
-  -webkit-backdrop-filter: blur(32px) saturate(190%);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.glass-status-bar {
-  background: rgba(0, 122, 204, 0.65);
-  backdrop-filter: blur(24px) saturate(190%);
-  -webkit-backdrop-filter: blur(24px) saturate(190%);
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.25);
+.glass-toolbar-capsule {
+  background: var(--glass-surface);
+  backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(190%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(190%);
+  border: 1px solid var(--glass-border-color);
+  box-shadow: inset 0 1px 1px 0 var(--glass-highlight-color), 0 12px 32px -4px rgba(0, 0, 0, 0.35);
+  border-radius: 9999px;
 }
 
 .glass-card {
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.15), 0 8px 32px -4px rgba(0, 0, 0, 0.35);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  background: var(--glass-card-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border-color);
+  box-shadow: inset 0 1px 1px 0 var(--glass-highlight-color), 0 10px 30px -4px rgba(0, 0, 0, 0.3);
+  border-radius: 1.25rem;
+  transition: all 0.3s var(--spring-bounce);
 }
 
 .glass-card:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.22);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.25), 0 12px 40px -4px rgba(0, 0, 0, 0.45);
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 1px 1px 0 var(--glass-highlight-color), 0 16px 40px -4px rgba(0, 0, 0, 0.45);
 }
 
 .glass-pill {
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border-color);
+  box-shadow: inset 0 1px 0 var(--glass-highlight-color);
+  border-radius: 9999px;
+  transition: all 0.2s var(--spring-bounce);
 }
 
 .glass-pill:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
-.glass-tab-active {
-  background: rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-top: 2px solid #007acc;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+.glass-pill:active {
+  transform: scale(0.96);
 }
 
 .glass-input {
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.25);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--glass-border-color);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  border-radius: 0.75rem;
+  transition: all 0.2s ease;
 }
 
 .glass-input:focus {
-  border-color: rgba(56, 189, 248, 0.7);
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2), inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.25), inset 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
-/*
- * Fullscreen focus mode.
- * The shell is pinned to the viewport so <main> receives exactly the space left
- * over by the header and footer (both stay visible). The panel then flexes to
- * fill that space — no hard-coded chrome heights.
- */
-body.fs-mode {
-  overflow: hidden;
+:root:not(.dark) .glass-input {
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  color: #000;
 }
 
-body.fs-mode .app-shell {
-  height: 100vh;
+/* Accessibility 1: prefers-reduced-transparency */
+@media (prefers-reduced-transparency: reduce) {
+  .glass-panel,
+  .glass-toolbar-capsule,
+  .glass-card,
+  .glass-pill,
+  .glass-input,
+  .glass-inset-card,
+  .glass-sheet-panel {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: #181b24 !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+  }
+
+  :root:not(.dark) .glass-panel,
+  :root:not(.dark) .glass-toolbar-capsule,
+  :root:not(.dark) .glass-card,
+  :root:not(.dark) .glass-pill,
+  :root:not(.dark) .glass-input,
+  :root:not(.dark) .glass-inset-card {
+    background: #ffffff !important;
+    border-color: rgba(0, 0, 0, 0.15) !important;
+  }
 }
 
-/* Edge-to-edge: drop the max-width cap and all padding so the panel
-   fits the full viewport width and height between header and footer. */
-body.fs-mode .app-main {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  max-width: none;
-  padding: 0;
+/* Accessibility 2: prefers-contrast: more */
+@media (prefers-contrast: more) {
+  .glass-panel,
+  .glass-toolbar-capsule,
+  .glass-card,
+  .glass-pill,
+  .glass-input,
+  .glass-inset-card {
+    border: 2px solid #ffffff !important;
+  }
+
+  :root:not(.dark) .glass-panel,
+  :root:not(.dark) .glass-toolbar-capsule,
+  :root:not(.dark) .glass-card,
+  :root:not(.dark) .glass-pill,
+  :root:not(.dark) .glass-input,
+  :root:not(.dark) .glass-inset-card {
+    border: 2px solid #000000 !important;
+  }
 }
 
-/* Panel container: override the grid so the single visible panel fills. */
-.fullscreen-mode {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.fullscreen-mode > div {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.fullscreen-mode .editor-shell,
-.fullscreen-mode .monaco-host {
-  height: 100%;
-  min-height: 0;
-}
-
-/* Flush against the viewport edges: no rounding, no side borders. */
-.fullscreen-mode .rounded-2xl,
-.fullscreen-mode .rounded-t-2xl,
-.fullscreen-mode .rounded-b-2xl {
-  border-radius: 0;
-}
-
-.fullscreen-mode > div {
-  border-left-width: 0;
-  border-right-width: 0;
-}
-
-/* Transition for layout loads */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.15s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
+/* Accessibility 3: prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+    transform: none !important;
+  }
 }

@@ -9,6 +9,9 @@ export interface ASTNode {
   children?: ASTNode[]     // Array element type or object properties
   unionTypes?: ASTNode[]   // Member types when inferredType === 'union'
   typeName?: string        // PascalCase inferred name for objects
+  presentInAllSamples: boolean
+  everNull: boolean
+  isRequired: boolean
 }
 
 export function toPascalCase(str: string): string {
@@ -189,11 +192,15 @@ export function useJsonParser() {
   function parseVal(key: string, val: any): ASTNode {
     const cleanK = cleanKey(key)
     const type = inferType(val)
+    const isNull = val === null
     const node: ASTNode = {
       key: cleanK,
       inferredType: type,
-      isNullable: val === null,
-      isOptional: false
+      isNullable: isNull,
+      isOptional: false,
+      presentInAllSamples: true,
+      everNull: isNull,
+      isRequired: !isNull
     }
 
     if (type === 'number') {
@@ -209,7 +216,10 @@ export function useJsonParser() {
           key: 'element',
           inferredType: 'any',
           isNullable: false,
-          isOptional: false
+          isOptional: false,
+          presentInAllSamples: true,
+          everNull: false,
+          isRequired: true
         }]
       } else {
         // Sample the array elements and merge their shapes into one element type.
@@ -227,15 +237,32 @@ export function useJsonParser() {
 
   function mergeASTNodes(nodes: ASTNode[], fallbackTypeName: string): ASTNode {
     if (nodes.length === 0) {
-      return { key: 'element', inferredType: 'any', isNullable: false, isOptional: false }
+      return {
+        key: 'element',
+        inferredType: 'any',
+        isNullable: false,
+        isOptional: false,
+        presentInAllSamples: true,
+        everNull: false,
+        isRequired: true
+      }
     }
 
     // If all are of same simple type, return it
     const types = new Set(nodes.map(n => n.inferredType))
-    const isNullable = nodes.some(n => n.isNullable)
+    const isNullable = nodes.some(n => n.isNullable || n.everNull || n.inferredType === 'null')
+    const everNull = isNullable
+    const presentInAllSamples = nodes.every(n => n.presentInAllSamples !== false)
+    const isRequired = presentInAllSamples && !everNull
 
     if (types.size === 1) {
-      const base: ASTNode = { ...nodes[0]!, isNullable }
+      const base: ASTNode = {
+        ...nodes[0]!,
+        isNullable,
+        everNull,
+        presentInAllSamples,
+        isRequired
+      }
       if (base.inferredType === 'number') {
         base.isInteger = nodes.every(n => n.isInteger)
       }
@@ -253,10 +280,11 @@ export function useJsonParser() {
     if (types.has('null')) {
       types.delete('null')
       if (types.size === 1) {
-        const baseType = Array.from(types)[0]
         const nonNullNodes = nodes.filter(n => n.inferredType !== 'null')
         const merged = mergeASTNodes(nonNullNodes, fallbackTypeName)
         merged.isNullable = true
+        merged.everNull = true
+        merged.isRequired = false
         return merged
       }
     }
@@ -275,10 +303,11 @@ export function useJsonParser() {
     }
 
     if (types.size === 1) {
-      const baseType = Array.from(types)[0]
       const nonNullNodes = nodes.filter(n => n.inferredType !== 'null')
       const merged = mergeASTNodes(nonNullNodes, fallbackTypeName)
       merged.isNullable = isNullable
+      merged.everNull = everNull
+      merged.isRequired = !isNullable
       return merged
     }
 
@@ -297,6 +326,8 @@ export function useJsonParser() {
     // A single surviving group (plus null) is just a nullable of that type.
     if (unionTypes.length === 1) {
       unionTypes[0].isNullable = isNullable
+      unionTypes[0].everNull = everNull
+      unionTypes[0].isRequired = !isNullable
       return unionTypes[0]
     }
 
@@ -305,6 +336,9 @@ export function useJsonParser() {
       inferredType: 'union',
       isNullable,
       isOptional: false,
+      presentInAllSamples,
+      everNull,
+      isRequired,
       unionTypes
     }
   }
@@ -324,15 +358,19 @@ export function useJsonParser() {
     const totalGroups = childrenGroups.length
 
     for (const [key, nodes] of keysMap.entries()) {
-      const isOptional = nodes.length < totalGroups
-      const isNullable = nodes.some(n => n.isNullable)
+      const presentInAll = (nodes.length === totalGroups) && nodes.every(n => n.presentInAllSamples !== false)
+      const everNull = nodes.some(n => n.everNull || n.isNullable || n.inferredType === 'null')
+      const isOptional = !presentInAll || nodes.some(n => n.isOptional)
+      const isNullable = everNull
+      const isRequired = presentInAll && !everNull
+
       const merged = mergeASTNodes(nodes, toPascalCase(key))
       merged.key = key
-      // Nested arrays get merged twice (once per element, once when the outer
-      // element type is rebuilt). The second pass sees a single already-merged
-      // node, so optionality must be carried over rather than recomputed away.
-      merged.isOptional = isOptional || nodes.some(n => n.isOptional)
-      merged.isNullable = merged.isNullable || isNullable
+      merged.presentInAllSamples = presentInAll
+      merged.everNull = everNull
+      merged.isOptional = isOptional
+      merged.isNullable = isNullable
+      merged.isRequired = isRequired
       mergedChildren.push(merged)
     }
 
@@ -433,7 +471,66 @@ export function useJsonParser() {
 
   return {
     parseJson,
-    collectModels
+    collectModels,
+    applyRequiredConfig
+  }
+}
+
+/**
+ * Configure isRequired, isOptional, and isNullable across all models according
+ * to active RequiredMode, per-field overrides, and nullable-if-absent setting.
+ */
+export function applyRequiredConfig(
+  models: ASTNode[],
+  options: {
+    requiredMode: 'none' | 'all' | 'inferred' | 'custom'
+    requiredOverrides?: Record<string, boolean>
+    nullableIfAbsent?: boolean
+  }
+): void {
+  const { requiredMode, requiredOverrides = {}, nullableIfAbsent = true } = options
+
+  function configureNode(node: ASTNode, parentTypeName: string) {
+    if (node.inferredType === 'object' && node.children) {
+      for (const child of node.children) {
+        let isReq = true
+        if (requiredMode === 'none') {
+          isReq = false
+        } else if (requiredMode === 'all') {
+          isReq = true
+        } else if (requiredMode === 'inferred') {
+          isReq = Boolean(child.presentInAllSamples && !child.everNull)
+        } else if (requiredMode === 'custom') {
+          const fieldKey = `${parentTypeName}.${child.key}`
+          if (fieldKey in requiredOverrides) {
+            isReq = Boolean(requiredOverrides[fieldKey])
+          } else {
+            isReq = Boolean(child.presentInAllSamples && !child.everNull)
+          }
+        }
+
+        child.isRequired = isReq
+        child.isOptional = !isReq
+
+        if (nullableIfAbsent) {
+          child.isNullable = !isReq || child.everNull
+        } else {
+          child.isNullable = child.everNull
+        }
+
+        if (child.inferredType === 'object') {
+          configureNode(child, child.typeName || toPascalCase(child.key))
+        } else if (child.inferredType === 'array' && child.children?.[0]) {
+          if (child.children[0].inferredType === 'object') {
+            configureNode(child.children[0], child.children[0].typeName || singularize(toPascalCase(child.key)))
+          }
+        }
+      }
+    }
+  }
+
+  for (const model of models) {
+    configureNode(model, model.typeName || 'Root')
   }
 }
 

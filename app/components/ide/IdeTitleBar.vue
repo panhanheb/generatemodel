@@ -1,11 +1,30 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
-import { Sparkles, Code2, Search, Split, Github, Sun, Moon, Check, ChevronDown } from 'lucide-vue-next'
+import {
+  Sparkles,
+  Code2,
+  Share2,
+  Copy,
+  Download,
+  AlignLeft,
+  Github,
+  Sun,
+  Moon,
+  PanelLeftClose,
+  PanelLeft,
+  ChevronDown,
+  Globe,
+  FileCode,
+  Sliders,
+  FileText
+} from 'lucide-vue-next'
 import { useEditorStore } from '~/stores/editor.store'
 import { useGeneratorStore } from '~/stores/generator.store'
 import { useThemeStore } from '~/stores/theme.store'
 import { useToast } from '~/composables/useToast'
 import { useShareLink } from '~/composables/useShareLink'
+import { useClipboard } from '~/composables/useClipboard'
+import { useDownload } from '~/composables/useDownload'
 import { SITE } from '~/constants/site'
 
 const emit = defineEmits(['generate', 'toggleSidebar'])
@@ -15,10 +34,10 @@ const generatorStore = useGeneratorStore()
 const themeStore = useThemeStore()
 const toast = useToast()
 const { createShareUrl } = useShareLink()
+const { copy } = useClipboard()
+const { download } = useDownload()
 
 const activeMenu = ref<string | null>(null)
-const isCommandPaletteOpen = ref(false)
-
 const menus = ['File', 'Edit', 'View', 'Help']
 
 const toggleMenu = (menu: string) => {
@@ -68,18 +87,6 @@ const fileExtension = computed(() => {
   }
 })
 
-const route = useRoute()
-
-const centerTitle = computed(() => {
-  if (route.path === '/languages') {
-    return 'nn_panha_json_viewer — Supported Languages'
-  }
-  if (route.path === '/docs') {
-    return 'nn_panha_json_viewer — Documentation'
-  }
-  return `nn_panha_json_viewer — ${generatorStore.rootClassName}.${fileExtension.value}`
-})
-
 const handleCopyShare = async () => {
   closeMenu()
   try {
@@ -90,174 +97,240 @@ const handleCopyShare = async () => {
     toast.error('Could not copy share link')
   }
 }
+
+const handleCopyCode = async () => {
+  if (!generatorStore.generatedCode) {
+    toast.error('No generated code to copy')
+    return
+  }
+  await copy(generatorStore.generatedCode)
+  toast.success('Generated code copied')
+}
+
+const handleDownload = () => {
+  if (!generatorStore.generatedCode) {
+    toast.error('No generated code to download')
+    return
+  }
+  download(generatorStore.generatedCode, `${generatorStore.rootClassName}.${fileExtension.value}`)
+  toast.success(`Downloaded ${generatorStore.rootClassName}.${fileExtension.value}`)
+}
 </script>
 
 <template>
-  <div class="glass-header h-8 text-[#cccccc] flex items-center justify-between px-2 text-xs select-none shrink-0 z-50">
-    <!-- Left: App Icon + Menus -->
-    <div class="flex items-center gap-1 ide-menu-container relative">
-      <div class="flex items-center gap-1.5 px-1.5 py-1 text-sky-400 font-bold">
-        <Code2 class="w-4 h-4 text-sky-400" />
-      </div>
+  <header class="px-3 pt-2.5 pb-1 shrink-0 z-40 select-none">
+    <div class="glass-toolbar-capsule h-11 px-3 flex items-center justify-between text-xs transition-all duration-300">
+      <!-- Left: App Brand & Context Menus -->
+      <div class="flex items-center gap-2 ide-menu-container relative">
+        <NuxtLink
+          to="/"
+          class="flex items-center gap-2 px-2 py-1 rounded-xl text-white font-semibold hover:bg-white/10 transition-colors cursor-pointer"
+        >
+          <div class="w-6 h-6 rounded-lg bg-gradient-to-tr from-blue-600 to-sky-400 flex items-center justify-center shadow-md">
+            <Code2 class="w-3.5 h-3.5 text-white" />
+          </div>
+          <span class="text-xs font-bold tracking-tight text-white hidden sm:inline">JSON Model</span>
+        </NuxtLink>
 
-      <!-- Menu Items -->
-      <div class="flex items-center">
-        <div v-for="menu in menus" :key="menu" class="relative">
-          <button
-            @click.stop="toggleMenu(menu)"
-            @mouseenter="handleMenuHover(menu)"
-            class="px-2 py-0.5 rounded-sm hover:bg-white/10 transition-colors cursor-pointer text-xs"
-            :class="activeMenu === menu ? 'bg-sky-500/30 text-white' : 'text-[#cccccc]'"
-          >
-            {{ menu }}
-          </button>
+        <!-- Divider -->
+        <div class="h-4 w-px bg-white/15 hidden md:block"></div>
 
-          <!-- Dropdown Menus -->
+        <!-- Desktop Context Menus -->
+        <div class="hidden md:flex items-center gap-0.5">
           <div
-            v-if="activeMenu === menu"
-            class="absolute left-0 top-full mt-0.5 w-60 bg-[#161822]/90 backdrop-blur-2xl border border-white/15 rounded-lg shadow-2xl py-1 z-50 text-[#cccccc] text-xs font-normal"
+            v-for="menu in menus"
+            :key="menu"
+            class="relative"
+            @mouseenter="handleMenuHover(menu)"
           >
-            <!-- File Menu -->
-            <template v-if="menu === 'File'">
-              <button @click="editorStore.clearJson(); closeMenu()" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between cursor-pointer">
-                <span>New / Clear JSON</span>
-                <span class="text-[#858585]">Ctrl+N</span>
-              </button>
-              <button @click="editorStore.formatJson(); closeMenu()" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between cursor-pointer">
-                <span>Format JSON</span>
-                <span class="text-[#858585]">Ctrl+Shift+F</span>
-              </button>
-              <div class="my-1 border-t border-white/10"></div>
-              <button @click="handleCopyShare" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between cursor-pointer">
-                <span>Share Link...</span>
-                <span class="text-[#858585]">Link</span>
-              </button>
-              <div class="my-1 border-t border-[#3c3c3c]"></div>
-              <NuxtLink to="/languages" @click="closeMenu" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between cursor-pointer">
-                <span>Supported Languages</span>
-              </NuxtLink>
-              <NuxtLink to="/docs" @click="closeMenu" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between cursor-pointer">
-                <span>Documentation</span>
-              </NuxtLink>
-            </template>
+            <button
+              @click.stop="toggleMenu(menu)"
+              class="px-2.5 py-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1 cursor-pointer font-medium text-[11px]"
+              :class="activeMenu === menu ? 'bg-white/15 text-white' : ''"
+            >
+              <span>{{ menu }}</span>
+              <ChevronDown class="w-2.5 h-2.5 opacity-60" />
+            </button>
 
-            <!-- Edit Menu -->
-            <template v-if="menu === 'Edit'">
-              <button @click="editorStore.formatJson(); closeMenu()" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between cursor-pointer">
-                <span>Format Document (Beautify)</span>
-                <span class="text-[#858585]">Ctrl+Shift+F</span>
-              </button>
-              <button @click="editorStore.minifyJson(); closeMenu()" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between cursor-pointer">
-                <span>Minify JSON</span>
-              </button>
-              <button @click="editorStore.validateJson(); closeMenu()" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between cursor-pointer">
-                <span>Validate Syntax</span>
-              </button>
-              <div class="my-1 border-t border-[#3c3c3c]"></div>
-              <button @click="generatorStore.checkDefaultValue = !generatorStore.checkDefaultValue; closeMenu()" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between items-center cursor-pointer">
-                <span>Check Default Null / 0</span>
-                <Check v-if="generatorStore.checkDefaultValue" class="w-3.5 h-3.5 text-sky-400" />
-              </button>
-            </template>
+            <!-- iOS Glass Context Menu Popover -->
+            <div
+              v-if="activeMenu === menu"
+              class="absolute left-0 top-full mt-1.5 w-52 rounded-2xl glass-sheet-panel border border-white/20 p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.5)] z-50 text-xs backdrop-blur-2xl"
+            >
+              <!-- FILE MENU -->
+              <template v-if="menu === 'File'">
+                <button
+                  @click="emit('generate'); closeMenu()"
+                  class="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/15 flex items-center justify-between text-left text-white transition-colors"
+                >
+                  <span class="flex items-center gap-2"><Sparkles class="w-3.5 h-3.5 text-blue-400" /> Generate</span>
+                  <span class="text-[10px] text-white/40 font-mono">Ctrl+Enter</span>
+                </button>
+                <button
+                  @click="handleCopyShare"
+                  class="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/15 flex items-center justify-between text-left text-white transition-colors"
+                >
+                  <span class="flex items-center gap-2"><Share2 class="w-3.5 h-3.5 text-emerald-400" /> Share Link</span>
+                </button>
+                <button
+                  @click="handleDownload(); closeMenu()"
+                  class="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/15 flex items-center justify-between text-left text-white transition-colors"
+                >
+                  <span class="flex items-center gap-2"><Download class="w-3.5 h-3.5 text-sky-400" /> Export File</span>
+                </button>
+              </template>
 
-            <!-- View Menu -->
-            <template v-if="menu === 'View'">
-              <button @click="emit('toggleSidebar'); closeMenu()" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between cursor-pointer">
-                <span>Toggle Primary Sidebar</span>
-                <span class="text-[#858585]">Ctrl+B</span>
-              </button>
-              <button @click="generatorStore.wordWrap = !generatorStore.wordWrap; closeMenu()" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between items-center cursor-pointer">
-                <span>Toggle Word Wrap</span>
-                <Check v-if="generatorStore.wordWrap" class="w-3.5 h-3.5 text-sky-400" />
-              </button>
-              <button @click="editorStore.isFullscreen = !editorStore.isFullscreen; closeMenu()" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between cursor-pointer">
-                <span>Toggle Fullscreen</span>
-                <span class="text-[#858585]">F11</span>
-              </button>
-            </template>
+              <!-- EDIT MENU -->
+              <template v-if="menu === 'Edit'">
+                <button
+                  @click="editorStore.formatJson(); closeMenu()"
+                  class="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/15 flex items-center justify-between text-left text-white transition-colors"
+                >
+                  <span class="flex items-center gap-2"><AlignLeft class="w-3.5 h-3.5 text-blue-400" /> Format JSON</span>
+                  <span class="text-[10px] text-white/40 font-mono">Ctrl+Shift+F</span>
+                </button>
+                <button
+                  @click="handleCopyCode(); closeMenu()"
+                  class="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/15 flex items-center justify-between text-left text-white transition-colors"
+                >
+                  <span class="flex items-center gap-2"><Copy class="w-3.5 h-3.5 text-sky-400" /> Copy Code</span>
+                  <span class="text-[10px] text-white/40 font-mono">Ctrl+Shift+C</span>
+                </button>
+                <button
+                  @click="editorStore.clearJson(); closeMenu()"
+                  class="w-full px-2.5 py-1.5 rounded-xl hover:bg-red-500/20 text-red-300 flex items-center justify-between text-left transition-colors"
+                >
+                  <span>Clear Input</span>
+                </button>
+              </template>
 
-            <!-- Help Menu -->
-            <template v-if="menu === 'Help'">
-              <NuxtLink to="/docs" @click="closeMenu" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between cursor-pointer">
-                <span>Documentation</span>
-              </NuxtLink>
-              <a :href="SITE.githubUrl" target="_blank" @click="closeMenu" class="w-full text-left px-3 py-1.5 hover:bg-[#094771] hover:text-white flex justify-between cursor-pointer">
-                <span>GitHub Repository</span>
-              </a>
-              <div class="my-1 border-t border-[#3c3c3c]"></div>
-              <div class="px-3 py-1.5 text-[11px] text-[#858585]">
-                {{ SITE.name }} v1.2.0
-              </div>
-            </template>
+              <!-- VIEW MENU -->
+              <template v-if="menu === 'View'">
+                <button
+                  @click="emit('toggleSidebar'); closeMenu()"
+                  class="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/15 flex items-center justify-between text-left text-white transition-colors"
+                >
+                  <span>Toggle Sidebar</span>
+                  <span class="text-[10px] text-white/40 font-mono">Ctrl+B</span>
+                </button>
+                <NuxtLink
+                  to="/languages"
+                  @click="closeMenu()"
+                  class="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/15 flex items-center justify-between text-left text-white transition-colors"
+                >
+                  <span>All Languages</span>
+                </NuxtLink>
+              </template>
 
-            <!-- Fallback for other menus -->
-            <template v-if="!['File', 'Edit', 'View', 'Help'].includes(menu)">
-              <div class="px-3 py-1.5 text-xs text-[#858585]">
-                {{ menu }} commands available in Command Palette (Ctrl+Shift+P)
-              </div>
-            </template>
+              <!-- HELP MENU -->
+              <template v-if="menu === 'Help'">
+                <NuxtLink
+                  to="/docs"
+                  @click="closeMenu()"
+                  class="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/15 flex items-center gap-2 text-left text-white transition-colors"
+                >
+                  <FileText class="w-3.5 h-3.5 text-blue-400" />
+                  <span>Documentation</span>
+                </NuxtLink>
+                <button
+                  @click="generatorStore.showShortcuts = true; closeMenu()"
+                  class="w-full px-2.5 py-1.5 rounded-xl hover:bg-white/15 flex items-center justify-between text-left text-white transition-colors"
+                >
+                  <span>Keyboard Shortcuts</span>
+                  <span class="text-[10px] text-white/40 font-mono">Ctrl+K Ctrl+S</span>
+                </button>
+              </template>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Center: Search / Command Palette Bar -->
-    <div class="flex-1 max-w-lg mx-4 flex items-center justify-center">
-      <div
-        @click="isCommandPaletteOpen = true"
-        class="w-full max-w-md bg-white/5 hover:bg-white/10 border border-white/15 hover:border-sky-400/50 backdrop-blur-md rounded-md px-3 py-1 flex items-center justify-between text-xs text-[#9d9d9d] hover:text-[#cccccc] transition-colors cursor-pointer shadow-inner"
-        title="Search files or run commands (Ctrl+P)"
-      >
-        <div class="flex items-center gap-2 truncate">
-          <Search class="w-3.5 h-3.5 text-[#858585]" />
-          <span class="truncate font-mono text-[11px]">{{ centerTitle }}</span>
-        </div>
-        <div class="flex items-center gap-1 text-[10px] text-[#858585] bg-white/10 px-1.5 py-0.5 rounded font-mono border border-white/10">
-          Ctrl+P
-        </div>
+      <!-- Center: High-Value Actions (Capsules) -->
+      <div class="flex items-center gap-1.5">
+        <!-- Generate Button (Hero Capsule) -->
+        <button
+          @click="emit('generate')"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#007AFF] dark:bg-[#0A84FF] text-white font-semibold text-xs shadow-[0_2px_12px_rgba(10,132,255,0.45)] hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+        >
+          <Sparkles class="w-3.5 h-3.5" />
+          <span>Generate</span>
+        </button>
+
+        <!-- Format Button -->
+        <button
+          @click="editorStore.formatJson()"
+          title="Format JSON (Ctrl+Shift+F)"
+          class="glass-pill px-2.5 py-1.5 flex items-center gap-1 text-xs text-white/80 hover:text-white cursor-pointer active:scale-95"
+        >
+          <AlignLeft class="w-3.5 h-3.5" />
+          <span class="hidden lg:inline">Format</span>
+        </button>
+
+        <!-- Copy Code Button -->
+        <button
+          @click="handleCopyCode"
+          title="Copy Generated Code (Ctrl+Shift+C)"
+          class="glass-pill px-2.5 py-1.5 flex items-center gap-1 text-xs text-white/80 hover:text-white cursor-pointer active:scale-95"
+        >
+          <Copy class="w-3.5 h-3.5" />
+          <span class="hidden lg:inline">Copy</span>
+        </button>
+
+        <!-- Share Button -->
+        <button
+          @click="handleCopyShare"
+          title="Create & Copy Share Link"
+          class="glass-pill px-2.5 py-1.5 flex items-center gap-1 text-xs text-white/80 hover:text-white cursor-pointer active:scale-95"
+        >
+          <Share2 class="w-3.5 h-3.5" />
+          <span class="hidden lg:inline">Share</span>
+        </button>
+      </div>
+
+      <!-- Right: Target Chip, Theme & Sidebar Controls -->
+      <div class="flex items-center gap-1.5">
+        <!-- Active Language Pill -->
+        <NuxtLink
+          to="/languages"
+          title="Change Target Language"
+          class="glass-pill px-2.5 py-1 flex items-center gap-1.5 text-xs text-white/90 hover:text-white cursor-pointer"
+        >
+          <Globe class="w-3.5 h-3.5 text-blue-400" />
+          <span class="font-medium capitalize">{{ generatorStore.selectedLanguage }}</span>
+          <span class="text-[10px] text-white/40 uppercase font-mono">({{ generatorStore.selectedFramework }})</span>
+        </NuxtLink>
+
+        <!-- Theme Toggle -->
+        <button
+          @click="themeStore.toggleTheme()"
+          title="Toggle Theme"
+          class="w-7 h-7 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer active:scale-90"
+        >
+          <Sun v-if="themeStore.isDark" class="w-3.5 h-3.5 text-amber-300" />
+          <Moon v-else class="w-3.5 h-3.5 text-blue-400" />
+        </button>
+
+        <!-- GitHub -->
+        <a
+          :href="SITE.githubUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="View on GitHub"
+          class="w-7 h-7 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer active:scale-90 hidden sm:flex"
+        >
+          <Github class="w-3.5 h-3.5" />
+        </a>
+
+        <!-- Sidebar Toggle -->
+        <button
+          @click="emit('toggleSidebar')"
+          title="Toggle Primary Sidebar (Ctrl+B)"
+          class="w-7 h-7 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer active:scale-90"
+        >
+          <PanelLeftClose v-if="generatorStore.isSidebarOpen" class="w-3.5 h-3.5" />
+          <PanelLeft v-else class="w-3.5 h-3.5" />
+        </button>
       </div>
     </div>
-
-    <!-- Right: Quick Actions & Window Controls -->
-    <div class="flex items-center gap-1.5">
-      <!-- Generate Model Button -->
-      <button
-        @click="emit('generate')"
-        class="bg-gradient-to-r from-sky-500/80 to-blue-600/80 hover:from-sky-500 hover:to-blue-600 text-white text-[11px] font-semibold px-2.5 py-1 rounded flex items-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95 border border-white/20 backdrop-blur-md"
-        title="Generate Model (Ctrl+Enter)"
-      >
-        <Sparkles class="w-3.5 h-3.5" />
-        <span class="hidden sm:inline">Generate</span>
-      </button>
-
-      <!-- Split / Layout Button -->
-      <button
-        @click="emit('toggleSidebar')"
-        title="Toggle Primary Sidebar (Ctrl+B)"
-        class="p-1 rounded hover:bg-white/10 text-[#cccccc] cursor-pointer transition-colors"
-      >
-        <Split class="w-3.5 h-3.5" />
-      </button>
-
-      <!-- Theme Switcher -->
-      <button
-        @click="themeStore.toggleTheme"
-        title="Toggle Theme"
-        class="p-1 rounded hover:bg-white/10 text-[#cccccc] cursor-pointer transition-colors"
-      >
-        <Moon v-if="themeStore.isDark" class="w-3.5 h-3.5" />
-        <Sun v-else class="w-3.5 h-3.5" />
-      </button>
-
-      <!-- GitHub -->
-      <a
-        :href="SITE.githubUrl"
-        target="_blank"
-        title="GitHub"
-        class="p-1 rounded hover:bg-white/10 text-[#cccccc] cursor-pointer transition-colors"
-      >
-        <Github class="w-3.5 h-3.5" />
-      </a>
-    </div>
-  </div>
+  </header>
 </template>

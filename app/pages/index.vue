@@ -12,6 +12,7 @@ import JsonEditor from '../components/JsonEditor.vue'
 import CodePreview from '../components/CodePreview.vue'
 import ErrorState from '../components/ErrorState.vue'
 import IdeWatermark from '../components/ide/IdeWatermark.vue'
+import GlassSegmented from '../components/ui/GlassSegmented.vue'
 import {
   FileJson,
   FileCode,
@@ -22,7 +23,8 @@ import {
   Copy,
   Check,
   Download,
-  WrapText
+  WrapText,
+  Sparkles
 } from 'lucide-vue-next'
 
 const editorStore = useEditorStore()
@@ -55,6 +57,12 @@ const fileExtension = computed(() => {
   }
 })
 
+// Mobile view switcher options
+const mobileViewOptions = computed(() => [
+  { value: 'input', label: 'Input JSON', icon: FileJson },
+  { value: 'output', label: `${generatorStore.rootClassName}.${fileExtension.value}`, icon: FileCode }
+])
+
 // Main generate wrapper
 const triggerGenerate = () => {
   if (!editorStore.rawJson.trim()) {
@@ -68,7 +76,10 @@ const triggerGenerate = () => {
       generatorStore.selectedLanguage,
       generatorStore.selectedFramework,
       generatorStore.rootClassName,
-      generatorStore.checkDefaultValue
+      generatorStore.checkDefaultValue,
+      generatorStore.requiredMode,
+      generatorStore.requiredOverrides,
+      generatorStore.nullableIfAbsent
     )
     generatorStore.generatedCode = output
   } catch (error: any) {
@@ -83,10 +94,13 @@ watch([
   () => generatorStore.selectedLanguage,
   () => generatorStore.selectedFramework,
   () => generatorStore.rootClassName,
-  () => generatorStore.checkDefaultValue
+  () => generatorStore.checkDefaultValue,
+  () => generatorStore.requiredMode,
+  () => generatorStore.requiredOverrides,
+  () => generatorStore.nullableIfAbsent
 ], () => {
   triggerGenerate()
-}, { immediate: true })
+}, { immediate: true, deep: true })
 
 // Watch external trigger events from titlebar, sidebar, statusbar
 watch(() => generatorStore.generateTrigger, () => {
@@ -126,7 +140,7 @@ const loadSampleJson = () => {
   "icon": "filter",
   "value": ""
 }`
-  generatorStore.rootClassName = 'SetEmailModel'
+  generatorStore.rootClassName = 'FilterItem'
   editorStore.validateJson()
   toast.success('Sample JSON loaded')
 }
@@ -221,15 +235,15 @@ onBeforeUnmount(() => {
     @dragover="handleDragOver"
     @dragleave="handleDragLeave"
     @drop="handleDrop"
-    class="relative w-full h-full flex flex-col flex-1 min-h-0 bg-[#1e1e1e] select-none overflow-hidden"
+    class="relative w-full h-full flex flex-col flex-1 min-h-0 select-none overflow-hidden"
   >
     <!-- Drag & Drop overlay -->
     <div
       v-if="isDragging"
-      class="fixed inset-0 z-50 bg-sky-500/20 backdrop-blur-xs border-2 border-dashed border-sky-400 flex items-center justify-center pointer-events-none"
+      class="fixed inset-0 z-50 bg-blue-500/20 backdrop-blur-md border-2 border-dashed border-blue-400 flex items-center justify-center pointer-events-none"
     >
-      <div class="bg-[#252526] text-white px-6 py-4 rounded-lg shadow-2xl border border-[#3c3c3c] flex items-center gap-3">
-        <FileJson class="w-8 h-8 text-sky-400 animate-bounce" />
+      <div class="glass-sheet-panel text-white px-8 py-5 rounded-3xl shadow-2xl border border-white/30 flex items-center gap-3">
+        <FileJson class="w-8 h-8 text-blue-400 animate-bounce" />
         <span class="text-sm font-semibold">Drop JSON or TXT file here</span>
       </div>
     </div>
@@ -243,85 +257,102 @@ onBeforeUnmount(() => {
       class="hidden"
     />
 
-    <!-- IDE Dual Tabs & Split Workspace -->
-    <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-white/10 overflow-hidden">
-      <!-- Left Pane: input.json -->
-      <div class="glass-panel flex flex-col h-full min-h-0 min-w-0 overflow-hidden">
-        <!-- Tab Bar -->
-        <div class="glass-header h-9 flex items-center justify-between px-2 text-xs shrink-0 select-none border-b border-white/10">
-          <div class="flex items-center h-full">
-            <div class="h-full bg-white/10 text-white border-t-2 border-t-sky-400 px-3 flex items-center gap-2 font-mono text-xs cursor-pointer border-r border-white/10 backdrop-blur-md shadow-inner">
-              <FileJson class="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span>input.json</span>
-              <span v-if="editorStore.rawJson.trim()" class="text-[10px] text-white/60 ml-1">
-                {{ editorStore.rawJson.length }}B
-              </span>
-            </div>
+    <!-- Mobile View Switcher (iOS Segmented Control) -->
+    <div class="lg:hidden pb-2 shrink-0">
+      <GlassSegmented
+        v-model="generatorStore.editorActiveTab"
+        :options="mobileViewOptions"
+        size="sm"
+      />
+    </div>
+
+    <!-- IDE Dual Glass Cards Split Workspace -->
+    <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-2.5 min-h-0 overflow-hidden">
+      <!-- Left Pane: Input JSON Glass Card -->
+      <div
+        class="glass-card flex flex-col h-full min-h-0 min-w-0 overflow-hidden transition-all duration-300"
+        :class="{ 'hidden lg:flex': generatorStore.editorActiveTab === 'output' }"
+      >
+        <!-- Card Header -->
+        <div class="h-10 px-3.5 flex items-center justify-between border-b border-white/10 shrink-0">
+          <div class="flex items-center gap-2">
+            <FileJson class="w-4 h-4 text-amber-400 shrink-0" />
+            <span class="font-mono text-xs font-semibold text-white/90">input.json</span>
+            <span v-if="editorStore.rawJson.trim()" class="text-[10px] text-white/40 font-mono">
+              {{ editorStore.rawJson.length }}B
+            </span>
           </div>
 
-          <!-- Tab Actions -->
-          <div class="flex items-center gap-1 text-white/70">
+          <!-- Actions Capsule Pills -->
+          <div class="flex items-center gap-1">
             <button
               @click="editorStore.formatJson"
               title="Format JSON (Ctrl+Shift+F)"
-              class="p-1.5 hover:text-white hover:bg-white/10 rounded cursor-pointer transition-colors"
+              class="glass-pill p-1.5 text-white/70 hover:text-white cursor-pointer active:scale-90"
             >
               <AlignLeft class="w-3.5 h-3.5" />
             </button>
             <button
               @click="editorStore.minifyJson"
               title="Minify JSON"
-              class="p-1.5 hover:text-white hover:bg-white/10 rounded cursor-pointer transition-colors"
+              class="glass-pill p-1.5 text-white/70 hover:text-white cursor-pointer active:scale-90"
             >
               <Shrink class="w-3.5 h-3.5" />
             </button>
             <button
               @click="triggerUploadSelect"
-              title="Upload JSON File"
-              class="p-1.5 hover:text-white hover:bg-white/10 rounded cursor-pointer transition-colors"
+              title="Upload File (.json, .txt)"
+              class="glass-pill p-1.5 text-white/70 hover:text-white cursor-pointer active:scale-90"
             >
               <Upload class="w-3.5 h-3.5" />
             </button>
             <button
               @click="editorStore.clearJson"
               title="Clear Input"
-              class="p-1.5 hover:text-rose-400 hover:bg-white/10 rounded cursor-pointer transition-colors"
+              class="glass-pill p-1.5 text-rose-300 hover:text-rose-200 hover:bg-rose-500/20 cursor-pointer active:scale-90"
             >
               <Trash2 class="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
 
-        <!-- Editor Host -->
+        <!-- Monaco Editor Host -->
         <div class="relative flex-1 min-h-0 overflow-hidden">
           <JsonEditor />
-          <!-- Error Alerts Overlay -->
-          <div v-if="!editorStore.isValid" class="absolute bottom-0 inset-x-0 p-3 border-t border-rose-500/30 bg-[#161822]/90 backdrop-blur-xl z-20">
+
+          <!-- Error Alerts Floating Banner -->
+          <div
+            v-if="!editorStore.isValid"
+            class="absolute bottom-2 inset-x-2 p-3 rounded-2xl border border-rose-400/30 bg-rose-950/80 backdrop-blur-xl z-20 shadow-lg"
+          >
             <ErrorState :message="editorStore.errorMessage" :line="editorStore.lineError" />
           </div>
         </div>
       </div>
 
-      <!-- Right Pane: Model Code Output -->
-      <div class="glass-panel flex flex-col h-full min-h-0 min-w-0 overflow-hidden">
-        <!-- Tab Bar -->
-        <div class="glass-header h-9 flex items-center justify-between px-2 text-xs shrink-0 select-none border-b border-white/10">
-          <div class="flex items-center h-full">
-            <div class="h-full bg-white/10 text-white border-t-2 border-t-sky-400 px-3 flex items-center gap-2 font-mono text-xs cursor-pointer border-r border-white/10 backdrop-blur-md shadow-inner">
-              <FileCode class="w-3.5 h-3.5 text-sky-400 shrink-0" />
-              <span>{{ generatorStore.rootClassName }}.{{ fileExtension }}</span>
-              <span class="text-[9px] bg-sky-400/20 text-sky-300 border border-sky-400/30 px-1 rounded uppercase font-bold">
-                {{ fileExtension }}
-              </span>
-            </div>
+      <!-- Right Pane: Model Code Output Glass Card -->
+      <div
+        class="glass-card flex flex-col h-full min-h-0 min-w-0 overflow-hidden transition-all duration-300"
+        :class="{ 'hidden lg:flex': generatorStore.editorActiveTab === 'input' }"
+      >
+        <!-- Card Header -->
+        <div class="h-10 px-3.5 flex items-center justify-between border-b border-white/10 shrink-0">
+          <div class="flex items-center gap-2 min-w-0">
+            <FileCode class="w-4 h-4 text-blue-400 shrink-0" />
+            <span class="font-mono text-xs font-semibold text-white/90 truncate">
+              {{ generatorStore.rootClassName }}.{{ fileExtension }}
+            </span>
+            <span class="text-[9px] bg-blue-500/20 text-blue-300 border border-blue-400/30 px-1.5 py-0.2 rounded-full uppercase font-bold shrink-0">
+              {{ fileExtension }}
+            </span>
           </div>
 
-          <!-- Tab Actions -->
-          <div class="flex items-center gap-1 text-white/70">
+          <!-- Actions Capsule Pills -->
+          <div class="flex items-center gap-1">
             <button
               @click="handleCopy"
               title="Copy Code (Ctrl+Shift+C)"
-              class="p-1.5 hover:text-white hover:bg-white/10 rounded cursor-pointer transition-colors"
+              class="glass-pill p-1.5 text-white/70 hover:text-white cursor-pointer active:scale-90"
             >
               <Check v-if="copied" class="w-3.5 h-3.5 text-emerald-400" />
               <Copy v-else class="w-3.5 h-3.5" />
@@ -329,15 +360,15 @@ onBeforeUnmount(() => {
             <button
               @click="handleDownload"
               title="Download File"
-              class="p-1.5 hover:text-white hover:bg-white/10 rounded cursor-pointer transition-colors"
+              class="glass-pill p-1.5 text-white/70 hover:text-white cursor-pointer active:scale-90"
             >
               <Download class="w-3.5 h-3.5" />
             </button>
             <button
               @click="generatorStore.wordWrap = !generatorStore.wordWrap"
               title="Toggle Word Wrap"
-              class="p-1.5 rounded cursor-pointer transition-colors"
-              :class="generatorStore.wordWrap ? 'text-sky-300 bg-sky-500/25 border border-sky-400/30' : 'hover:text-white hover:bg-white/10'"
+              class="glass-pill p-1.5 cursor-pointer active:scale-90"
+              :class="generatorStore.wordWrap ? 'text-blue-300 bg-blue-500/30 border-blue-400/50' : 'text-white/70 hover:text-white'"
             >
               <WrapText class="w-3.5 h-3.5" />
             </button>

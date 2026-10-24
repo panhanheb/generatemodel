@@ -115,17 +115,28 @@ onMounted(async () => {
         }
       })
 
+      monaco.editor.defineTheme('glass-light', {
+        base: 'vs',
+        inherit: true,
+        rules: [],
+        colors: {
+          'editor.background': '#00000000',
+          'editorGutter.background': '#00000000',
+          'minimap.background': '#00000000'
+        }
+      })
+
       setTimeout(() => {
         if (!containerRef.value) return
 
         editor = monaco.editor.create(containerRef.value, {
           value: generatorStore.generatedCode,
           language: monacoLanguage.value,
-          theme: themeStore.currentTheme === 'light' ? 'vs' : 'glass-dark',
+          theme: themeStore.isDark ? 'glass-dark' : 'glass-light',
           automaticLayout: true,
           minimap: { enabled: true },
           fontSize: 13,
-          fontFamily: 'JetBrains Mono, Fira Code, Menlo, Monaco, Consolas, monospace',
+          fontFamily: '"SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, monospace',
           lineHeight: 20,
           lineNumbers: 'on',
           roundedSelection: true,

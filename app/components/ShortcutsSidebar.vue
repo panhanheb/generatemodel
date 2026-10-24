@@ -1,123 +1,95 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { X, Keyboard } from 'lucide-vue-next'
+import { computed } from 'vue'
+import { Keyboard, Command, Sparkles, SlidersHorizontal, BookOpen } from 'lucide-vue-next'
+import { useGeneratorStore } from '~/stores/generator.store'
+import GlassSheet from './ui/GlassSheet.vue'
 
-const isOpen = ref(false)
-const isMac = ref(false)
+const generatorStore = useGeneratorStore()
 
-onMounted(() => {
+const isMac = computed(() => {
   if (typeof window !== 'undefined' && navigator) {
-    isMac.value = /Mac|iPod|iPhone|iPad/.test(navigator.platform || '')
+    return /Mac|iPod|iPhone|iPad/.test(navigator.platform || '')
   }
-  
-  const handleKeyDown = (e: KeyboardEvent) => {
-    // Avoid triggering when focused inside editable text areas
-    if (e.key === '?' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable)) {
-      isOpen.value = !isOpen.value
-    }
-  }
-  window.addEventListener('keydown', handleKeyDown)
-  onBeforeUnmount(() => {
-    window.removeEventListener('keydown', handleKeyDown)
-  })
+  return false
 })
+
+const shortcutGroups = computed(() => [
+  {
+    title: 'Code Generation & Actions',
+    items: [
+      { action: 'Generate Model Code', keys: isMac.value ? '⌘ + Enter' : 'Ctrl + Enter' },
+      { action: 'Format JSON Payload', keys: isMac.value ? '⌘ + Shift + F' : 'Ctrl + Shift + F' },
+      { action: 'Copy Generated Code', keys: isMac.value ? '⌘ + Shift + C' : 'Ctrl + Shift + C' },
+      { action: 'Toggle Sidebar Panel', keys: isMac.value ? '⌘ + B' : 'Ctrl + B' }
+    ]
+  },
+  {
+    title: 'Navigation & Dialogs',
+    items: [
+      { action: 'Open Keyboard Shortcuts', keys: isMac.value ? '⌘ + K  ⌘ + S' : 'Ctrl + K  Ctrl + S' },
+      { action: 'Close Dialogs / Popovers', keys: 'Esc' },
+      { action: 'Toggle Shortcuts Hint', keys: '?' }
+    ]
+  }
+])
+
+const close = () => {
+  generatorStore.showShortcuts = false
+}
 </script>
 
 <template>
-  <div>
-    <!-- Floating Trigger Button -->
-    <button
-      @click="isOpen = true"
-      class="fixed bottom-6 right-6 z-40 flex items-center gap-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 px-4 py-2.5 rounded-full shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all cursor-pointer font-medium text-xs border border-slate-800 dark:border-slate-200"
-    >
-      <Keyboard class="w-4 h-4" />
-      <span>Shortcuts</span>
-      <kbd class="ml-1 px-1 py-0.5 bg-slate-800 dark:bg-slate-200 border border-slate-700 dark:border-slate-300 rounded text-[9px] font-mono opacity-80">?</kbd>
-    </button>
+  <GlassSheet
+    :isOpen="generatorStore.showShortcuts"
+    title="Keyboard Shortcuts"
+    maxWidth="max-w-md"
+    @close="close"
+  >
+    <template #icon>
+      <Keyboard class="w-4 h-4 text-blue-400" />
+    </template>
 
-    <!-- Backdrop Overlay -->
-    <div
-      v-if="isOpen"
-      @click="isOpen = false"
-      class="fixed inset-0 z-50 bg-slate-950/20 dark:bg-slate-950/40 backdrop-blur-xs transition-opacity duration-300"
-    ></div>
-
-    <!-- Aside Sidebar Panel -->
-    <aside
-      class="fixed top-0 right-0 z-50 h-full w-80 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl transition-transform duration-350 ease-out transform"
-      :class="isOpen ? 'translate-x-0' : 'translate-x-full'"
-    >
-      <!-- Header -->
-      <div class="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800">
-        <div class="flex items-center gap-2">
-          <Keyboard class="w-5 h-5 text-brand-primary" />
-          <h3 class="text-sm font-bold text-slate-800 dark:text-slate-200">Keyboard Shortcuts</h3>
-        </div>
-        <button
-          @click="isOpen = false"
-          class="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
-        >
-          <X class="w-4 h-4" />
-        </button>
-      </div>
-
-      <!-- Content -->
-      <div class="p-6 space-y-6 overflow-y-auto h-[calc(100%-70px)]">
-        <!-- Editor Actions -->
-        <div>
-          <h4 class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">JSON Editor</h4>
-          <div class="space-y-3">
-            <div class="flex items-center justify-between text-xs">
-              <span class="text-slate-600 dark:text-slate-300">Format JSON</span>
-              <kbd class="px-1.5 py-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[10px] font-mono text-slate-500 dark:text-slate-400">
-                {{ isMac ? '⌘+Shift+F' : 'Ctrl+Shift+F' }}
-              </kbd>
-            </div>
-            <div class="flex items-center justify-between text-xs">
-              <span class="text-slate-600 dark:text-slate-300">Validate JSON</span>
-              <span class="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Automatic</span>
-            </div>
-            <div class="flex items-center justify-between text-xs">
-              <span class="text-slate-600 dark:text-slate-300">Paste Clipboard</span>
-              <span class="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Click icon / Ctrl+V</span>
-            </div>
-          </div>
+    <div class="space-y-4">
+      <div
+        v-for="group in shortcutGroups"
+        :key="group.title"
+        class="space-y-2"
+      >
+        <div class="text-[11px] font-semibold uppercase tracking-wider text-white/50 px-1">
+          {{ group.title }}
         </div>
 
-        <!-- Generator Actions -->
-        <div>
-          <h4 class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Model Generator</h4>
-          <div class="space-y-3">
-            <div class="flex items-center justify-between text-xs">
-              <span class="text-slate-600 dark:text-slate-300">Generate Model</span>
-              <kbd class="px-1.5 py-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[10px] font-mono text-slate-500 dark:text-slate-400">
-                {{ isMac ? '⌘+Enter' : 'Ctrl+Enter' }}
-              </kbd>
-            </div>
-            <div class="flex items-center justify-between text-xs">
-              <span class="text-slate-600 dark:text-slate-300">Copy Code</span>
-              <kbd class="px-1.5 py-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[10px] font-mono text-slate-500 dark:text-slate-400">
-                {{ isMac ? '⌘+Shift+C' : 'Ctrl+Shift+C' }}
-              </kbd>
-            </div>
-          </div>
-        </div>
-
-        <!-- Inputs & Gestures -->
-        <div>
-          <h4 class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Gestures</h4>
-          <div class="space-y-3">
-            <div class="flex items-center justify-between text-xs">
-              <span class="text-slate-600 dark:text-slate-300">File Import</span>
-              <span class="text-[10px] text-slate-500 dark:text-slate-400">Drag & Drop any file</span>
-            </div>
-            <div class="flex items-center justify-between text-xs">
-              <span class="text-slate-600 dark:text-slate-300">Toggle Sidebar</span>
-              <kbd class="px-1.5 py-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[10px] font-mono text-slate-500 dark:text-slate-400">?</kbd>
-            </div>
+        <div class="rounded-2xl glass-inset-box divide-y divide-white/10 overflow-hidden text-xs">
+          <div
+            v-for="item in group.items"
+            :key="item.action"
+            class="flex items-center justify-between px-3.5 py-2.5 hover:bg-white/5 transition-colors"
+          >
+            <span class="text-white/80 font-medium">{{ item.action }}</span>
+            <kbd class="px-2 py-0.5 rounded-lg bg-white/10 text-blue-300 font-mono text-[11px] border border-white/15 shadow-inner">
+              {{ item.keys }}
+            </kbd>
           </div>
         </div>
       </div>
-    </aside>
-  </div>
+    </div>
+
+    <template #footer>
+      <button
+        @click="close"
+        class="px-4 py-1.5 rounded-full bg-blue-500 hover:bg-blue-600 text-white font-medium text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+      >
+        Got it
+      </button>
+    </template>
+  </GlassSheet>
 </template>
+
+<style scoped>
+.glass-inset-box {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+</style>

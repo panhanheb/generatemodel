@@ -43,6 +43,17 @@ onMounted(async () => {
           'minimap.background': '#00000000'
         }
       })
+
+      monaco.editor.defineTheme('glass-light', {
+        base: 'vs',
+        inherit: true,
+        rules: [],
+        colors: {
+          'editor.background': '#00000000',
+          'editorGutter.background': '#00000000',
+          'minimap.background': '#00000000'
+        }
+      })
       
       // Short delay to ensure container is fully rendered and has correct dimensions
       setTimeout(() => {
@@ -51,11 +62,11 @@ onMounted(async () => {
         editor = monaco.editor.create(containerRef.value, {
           value: editorStore.rawJson,
           language: 'json',
-          theme: themeStore.currentTheme === 'light' ? 'vs' : 'glass-dark',
+          theme: themeStore.isDark ? 'glass-dark' : 'glass-light',
           automaticLayout: true,
           minimap: { enabled: false },
           fontSize: 13,
-          fontFamily: 'JetBrains Mono, Fira Code, Menlo, Monaco, Consolas, monospace',
+          fontFamily: '"SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, monospace',
           lineHeight: 20,
           lineNumbers: 'on',
           roundedSelection: true,

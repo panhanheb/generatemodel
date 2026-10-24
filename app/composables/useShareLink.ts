@@ -1,5 +1,5 @@
 import { useEditorStore } from '~/stores/editor.store'
-import { useGeneratorStore } from '~/stores/generator.store'
+import { useGeneratorStore, getDefaultRequiredMode } from '~/stores/generator.store'
 
 /**
  * Encodes the current JSON + language/style/root selection into a shareable URL
@@ -14,7 +14,11 @@ export function useShareLink() {
       j: editorStore.rawJson,
       l: generatorStore.selectedLanguage,
       s: generatorStore.selectedFramework,
-      r: generatorStore.rootClassName
+      r: generatorStore.rootClassName,
+      rm: generatorStore.requiredMode,
+      ro: generatorStore.requiredOverrides,
+      na: generatorStore.nullableIfAbsent,
+      cd: generatorStore.checkDefaultValue
     }
     // encodeURIComponent + escape keeps unicode safe through btoa.
     return btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
@@ -62,6 +66,25 @@ export function useShareLink() {
       if (payload.l) generatorStore.selectedLanguage = payload.l
       if (payload.s) generatorStore.selectedFramework = payload.s
       if (payload.r) generatorStore.rootClassName = payload.r
+
+      // Backward-compatible required fields: missing rm -> language default
+      if (payload.rm) {
+        generatorStore.setRequiredMode(payload.rm)
+      } else {
+        const lang = payload.l || generatorStore.selectedLanguage
+        generatorStore.requiredMode = getDefaultRequiredMode(lang)
+      }
+
+      if (payload.ro && typeof payload.ro === 'object') {
+        generatorStore.requiredOverrides = payload.ro
+      }
+      if (payload.na !== undefined) {
+        generatorStore.nullableIfAbsent = Boolean(payload.na)
+      }
+      if (payload.cd !== undefined) {
+        generatorStore.checkDefaultValue = Boolean(payload.cd)
+      }
+
       editorStore.validateJson()
       return true
     } catch {

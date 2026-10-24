@@ -13,6 +13,9 @@ export interface GenerationStyleOption {
   name: string
 }
 
+/** Mode determining which fields are generated as required vs optional. */
+export type RequiredMode = 'none' | 'all' | 'inferred' | 'custom'
+
 /** Inferred primitive/complex type produced by the JSON parser. */
 export type InferredType =
   | 'string'
@@ -23,4 +26,6 @@ export type InferredType =
   | 'color'
   | 'object'
   | 'array'
+  | 'union'
   | 'null'
+  | 'any'

@@ -1,10 +1,20 @@
-import { useJsonParser, type ASTNode, toPascalCase } from './useJsonParser'
+import { useJsonParser, type ASTNode, toPascalCase, applyRequiredConfig } from './useJsonParser'
+import type { RequiredMode } from '~/types/generator'
 
 export function useCodeGenerator() {
   const { parseJson, collectModels } = useJsonParser()
 
   // Main code generator entry point
-  function generate(jsonStr: string, language: string, framework: string, rootName: string = 'Root', checkDefault: boolean = true): string {
+  function generate(
+    jsonStr: string,
+    language: string,
+    framework: string,
+    rootName: string = 'Root',
+    checkDefault: boolean = true,
+    requiredMode: RequiredMode = 'inferred',
+    requiredOverrides: Record<string, boolean> = {},
+    nullableIfAbsent: boolean = true
+  ): string {
     if (!jsonStr.trim()) return ''
 
     let ast: ASTNode | null = null
@@ -29,13 +39,20 @@ export function useCodeGenerator() {
       models.push(ast)
     }
 
+    // Apply Required Fields configuration across all collected models
+    applyRequiredConfig(models, {
+      requiredMode,
+      requiredOverrides,
+      nullableIfAbsent
+    })
+
     // Direct generators
     switch (language) {
       case 'typescript':
       case 'nodejs':
-        return generateTypeScript(models, framework)
+        return generateTypeScript(models, framework, nullableIfAbsent)
       case 'flutter':
-        return generateFlutter(models, framework, checkDefault)
+        return generateFlutter(models, framework, checkDefault, nullableIfAbsent)
       case 'laravel':
         return generateLaravel(models, framework)
       case 'php':
@@ -45,7 +62,7 @@ export function useCodeGenerator() {
       case 'spring_boot':
         return generateSpringBoot(models, framework)
       case 'kotlin':
-        return generateKotlin(models, framework)
+        return generateKotlin(models, framework, checkDefault)
       case 'swift':
         return generateSwift(models, framework)
       case 'go':
@@ -71,7 +88,7 @@ export function useCodeGenerator() {
       case 'openapi':
         return generateOpenAPI(models)
       case 'python':
-        return generatePython(models, framework)
+        return generatePython(models, framework, checkDefault)
       case 'rust':
         return generateRust(models)
       case 'zod':
@@ -99,10 +116,10 @@ export function useCodeGenerator() {
       const members = (node.unionTypes || []).map(m => getTsType({ ...m, isNullable: false }))
       base = members.length ? Array.from(new Set(members)).join(' | ') : 'any'
     }
-    return base + (node.isNullable ? ' | null' : '')
+    return base
   }
 
-  function generateTypeScript(models: ASTNode[], style: string): string {
+  function generateTypeScript(models: ASTNode[], style: string, nullableIfAbsent: boolean = true): string {
     let code = ''
     for (const model of models) {
       const isInterface = style === 'interface'
@@ -110,8 +127,13 @@ export function useCodeGenerator() {
       if (model.children) {
         for (const child of model.children) {
           const typeStr = getTsType(child)
-          const opt = child.isOptional ? '?' : ''
-          code += `  ${child.key}${opt}: ${typeStr};\n`
+          if (child.isRequired) {
+            const nullSuffix = child.isNullable ? ' | null' : ''
+            code += `  ${child.key}: ${typeStr}${nullSuffix};\n`
+          } else {
+            const nullSuffix = (child.everNull || nullableIfAbsent || child.isNullable) ? ' | null' : ''
+            code += `  ${child.key}?: ${typeStr}${nullSuffix};\n`
+          }
         }
       }
       code += `}${isInterface ? '' : ';'}\n\n`
@@ -122,7 +144,6 @@ export function useCodeGenerator() {
   // --- DART / FLUTTER ---
   function getDartType(node: ASTNode): string {
     let base = 'dynamic'
-    // Colors are kept as String (QuickType-style pure Dart — no Flutter Color import).
     if (node.inferredType === 'string' || node.inferredType === 'uuid' || node.inferredType === 'color') base = 'String'
     else if (node.inferredType === 'number') base = node.isInteger ? 'int' : 'double'
     else if (node.inferredType === 'boolean') base = 'bool'
@@ -136,7 +157,23 @@ export function useCodeGenerator() {
     return base
   }
 
-  function generateFlutter(models: ASTNode[], style: string, checkDefault: boolean = true): string {
+  function getDartDefault(child: ASTNode): string | null {
+    if (child.inferredType === 'number') {
+      return child.isInteger ? '0' : '0.0'
+    }
+    if (child.inferredType === 'boolean') {
+      return 'false'
+    }
+    if (child.inferredType === 'string' || child.inferredType === 'uuid' || child.inferredType === 'color') {
+      return "''"
+    }
+    if (child.inferredType === 'array') {
+      return 'const []'
+    }
+    return null
+  }
+
+  function generateFlutter(models: ASTNode[], style: string, checkDefault: boolean = true, nullableIfAbsent: boolean = true): string {
     if (style === 'freezed') return generateFreezed(models, checkDefault)
     if (style === 'json_serializable') return generateJsonSerializable(models, checkDefault)
 
@@ -172,130 +209,155 @@ export function useCodeGenerator() {
       code += `class ${model.typeName} ${isEquatable ? 'extends Equatable ' : ''}{\n`
       
       const fieldPrefix = isEquatable ? 'final ' : ''
+      const children = model.children || []
 
       // Fields
-      if (model.children) {
-        for (const child of model.children) {
-          const typeStr = getDartType(child)
-          const isNull = child.isNullable || child.isOptional
-          const fieldName = toCamelCase(child.key)
-          code += `    ${fieldPrefix}${typeStr}${isNull ? '?' : ''} ${fieldName};\n`
-        }
+      for (const child of children) {
+        const typeStr = getDartType(child)
+        const hasDefault = checkDefault && getDartDefault(child) !== null
+        const isNonNullable = child.isRequired || hasDefault
+        const fieldName = toCamelCase(child.key)
+        code += `    ${fieldPrefix}${typeStr}${isNonNullable ? '' : '?'} ${fieldName};\n`
       }
       code += '\n'
 
-      // Constructor
+      // Constructor (Order: required first, then default values, then optional)
       code += `    ${model.typeName}({\n`
-      if (model.children) {
-        for (const child of model.children) {
-          const isNull = child.isNullable || child.isOptional
-          const fieldName = toCamelCase(child.key)
-          code += `        ${isNull ? '' : 'required '}this.${fieldName},\n`
+      const reqFields: string[] = []
+      const defFields: string[] = []
+      const optFields: string[] = []
+
+      for (const child of children) {
+        const fieldName = toCamelCase(child.key)
+        const defVal = checkDefault ? getDartDefault(child) : null
+        if (defVal !== null) {
+          defFields.push(`        this.${fieldName} = ${defVal},\n`)
+        } else if (child.isRequired) {
+          reqFields.push(`        required this.${fieldName},\n`)
+        } else {
+          optFields.push(`        this.${fieldName},\n`)
         }
       }
+      code += reqFields.join('')
+      code += defFields.join('')
+      code += optFields.join('')
       code += '    });\n\n'
 
       // From JSON
       code += `    factory ${model.typeName}.fromJson(Map<String, dynamic> json) => ${model.typeName}(\n`
-      if (model.children) {
-        for (const child of model.children) {
-          const key = child.key
-          const fieldName = toCamelCase(key)
-          const isNull = child.isNullable || child.isOptional
-          if (child.inferredType === 'object') {
-            const innerName = child.typeName || 'dynamic'
-            if (isNull) {
-              code += `        ${fieldName}: json["${key}"] == null ? null : ${innerName}.fromJson(json["${key}"]),\n`
-            } else {
-              code += `        ${fieldName}: ${innerName}.fromJson(json["${key}"]),\n`
-            }
-          } else if (child.inferredType === 'array' && child.children?.[0]?.inferredType === 'object') {
-            const innerName = child.children[0].typeName || 'dynamic'
-            if (isNull) {
-              code += `        ${fieldName}: json["${key}"] == null ? null : List<${innerName}>.from(json["${key}"].map((x) => ${innerName}.fromJson(x))),\n`
-            } else if (checkDefault) {
-              code += `        ${fieldName}: json["${key}"] == null ? [] : List<${innerName}>.from(json["${key}"].map((x) => ${innerName}.fromJson(x))),\n`
-            } else {
-              code += `        ${fieldName}: List<${innerName}>.from(json["${key}"].map((x) => ${innerName}.fromJson(x))),\n`
-            }
-          } else if (child.inferredType === 'array') {
-            const elemType = getDartType(child.children?.[0] || { inferredType: 'any', isNullable: false, isOptional: false, key: '' })
-            if (isNull) {
-              code += `        ${fieldName}: json["${key}"] == null ? null : List<${elemType}>.from(json["${key}"].map((x) => x)),\n`
-            } else if (checkDefault) {
-              code += `        ${fieldName}: json["${key}"] == null ? [] : List<${elemType}>.from(json["${key}"].map((x) => x)),\n`
-            } else {
-              code += `        ${fieldName}: List<${elemType}>.from(json["${key}"].map((x) => x)),\n`
-            }
-          } else if (child.inferredType === 'date') {
-            if (isNull) {
-              code += `        ${fieldName}: json["${key}"] == null ? null : DateTime.parse(json["${key}"]),\n`
-            } else if (checkDefault) {
-              code += `        ${fieldName}: json["${key}"] == null ? DateTime.now() : DateTime.parse(json["${key}"]),\n`
-            } else {
-              code += `        ${fieldName}: DateTime.parse(json["${key}"]),\n`
-            }
-          } else if (child.inferredType === 'number') {
-            if (child.isInteger) {
-              if (isNull) {
-                code += `        ${fieldName}: json["${key}"],\n`
-              } else if (checkDefault) {
-                code += `        ${fieldName}: json["${key}"] ?? 0,\n`
-              } else {
-                code += `        ${fieldName}: json["${key}"],\n`
-              }
-            } else {
-              if (isNull) {
-                code += `        ${fieldName}: (json["${key}"] as num?)?.toDouble(),\n`
-              } else if (checkDefault) {
-                code += `        ${fieldName}: (json["${key}"] as num?)?.toDouble() ?? 0.0,\n`
-              } else {
-                code += `        ${fieldName}: (json["${key}"] as num).toDouble(),\n`
-              }
-            }
-          } else if (child.inferredType === 'string' || child.inferredType === 'uuid' || child.inferredType === 'color') {
-            if (isNull) {
+      for (const child of children) {
+        const key = child.key
+        const fieldName = toCamelCase(key)
+        const hasDefault = checkDefault && getDartDefault(child) !== null
+        const isNullable = !child.isRequired && !hasDefault
+
+        if (child.inferredType === 'object') {
+          const innerName = child.typeName || 'dynamic'
+          if (isNullable) {
+            code += `        ${fieldName}: json["${key}"] == null ? null : ${innerName}.fromJson(json["${key}"]),\n`
+          } else {
+            code += `        ${fieldName}: ${innerName}.fromJson(json["${key}"]),\n`
+          }
+        } else if (child.inferredType === 'array' && child.children?.[0]?.inferredType === 'object') {
+          const innerName = child.children[0].typeName || 'dynamic'
+          if (isNullable) {
+            code += `        ${fieldName}: json["${key}"] == null ? null : List<${innerName}>.from(json["${key}"].map((x) => ${innerName}.fromJson(x))),\n`
+          } else if (checkDefault) {
+            code += `        ${fieldName}: json["${key}"] == null ? [] : List<${innerName}>.from(json["${key}"].map((x) => ${innerName}.fromJson(x))),\n`
+          } else {
+            code += `        ${fieldName}: List<${innerName}>.from(json["${key}"].map((x) => ${innerName}.fromJson(x))),\n`
+          }
+        } else if (child.inferredType === 'array') {
+          const elemType = getDartType(child.children?.[0] || { inferredType: 'any', isNullable: false, isOptional: false, key: '', presentInAllSamples: true, everNull: false, isRequired: true })
+          if (isNullable) {
+            code += `        ${fieldName}: json["${key}"] == null ? null : List<${elemType}>.from(json["${key}"].map((x) => x)),\n`
+          } else if (checkDefault) {
+            code += `        ${fieldName}: json["${key}"] == null ? [] : List<${elemType}>.from(json["${key}"].map((x) => x)),\n`
+          } else {
+            code += `        ${fieldName}: List<${elemType}>.from(json["${key}"].map((x) => x)),\n`
+          }
+        } else if (child.inferredType === 'date') {
+          if (isNullable) {
+            code += `        ${fieldName}: json["${key}"] == null ? null : DateTime.parse(json["${key}"]),\n`
+          } else if (checkDefault) {
+            code += `        ${fieldName}: json["${key}"] == null ? DateTime.now() : DateTime.parse(json["${key}"]),\n`
+          } else {
+            code += `        ${fieldName}: DateTime.parse(json["${key}"]),\n`
+          }
+        } else if (child.inferredType === 'number') {
+          if (child.isInteger) {
+            if (isNullable) {
               code += `        ${fieldName}: json["${key}"],\n`
             } else if (checkDefault) {
-              code += `        ${fieldName}: json["${key}"] ?? "",\n`
-            } else {
-              code += `        ${fieldName}: json["${key}"],\n`
-            }
-          } else if (child.inferredType === 'boolean') {
-            if (isNull) {
-              code += `        ${fieldName}: json["${key}"],\n`
-            } else if (checkDefault) {
-              code += `        ${fieldName}: json["${key}"] ?? false,\n`
+              code += `        ${fieldName}: json["${key}"] ?? 0,\n`
             } else {
               code += `        ${fieldName}: json["${key}"],\n`
             }
           } else {
+            if (isNullable) {
+              code += `        ${fieldName}: (json["${key}"] as num?)?.toDouble(),\n`
+            } else if (checkDefault) {
+              code += `        ${fieldName}: (json["${key}"] as num?)?.toDouble() ?? 0.0,\n`
+            } else {
+              code += `        ${fieldName}: (json["${key}"] as num).toDouble(),\n`
+            }
+          }
+        } else if (child.inferredType === 'string' || child.inferredType === 'uuid' || child.inferredType === 'color') {
+          if (isNullable) {
+            code += `        ${fieldName}: json["${key}"],\n`
+          } else if (checkDefault) {
+            code += `        ${fieldName}: json["${key}"] ?? "",\n`
+          } else {
             code += `        ${fieldName}: json["${key}"],\n`
           }
+        } else if (child.inferredType === 'boolean') {
+          if (isNullable) {
+            code += `        ${fieldName}: json["${key}"],\n`
+          } else if (checkDefault) {
+            code += `        ${fieldName}: json["${key}"] ?? false,\n`
+          } else {
+            code += `        ${fieldName}: json["${key}"],\n`
+          }
+        } else {
+          code += `        ${fieldName}: json["${key}"],\n`
         }
       }
       code += '    );\n\n'
 
       // To JSON
       code += '    Map<String, dynamic> toJson() => {\n'
-      if (model.children) {
-        for (const child of model.children) {
-          const key = child.key
-          const fieldName = toCamelCase(key)
-          const isNull = child.isNullable || child.isOptional
-          if (child.inferredType === 'object') {
-            code += `        "${key}": ${fieldName}${isNull ? '?' : ''}.toJson(),\n`
-          } else if (child.inferredType === 'array' && child.children?.[0]?.inferredType === 'object') {
-            if (isNull) {
-              code += `        "${key}": ${fieldName} == null ? null : List<dynamic>.from(${fieldName}!.map((x) => x.toJson())),\n`
-            } else {
-              code += `        "${key}": List<dynamic>.from(${fieldName}.map((x) => x.toJson())),\n`
-            }
-          } else if (child.inferredType === 'date') {
-            code += `        "${key}": ${fieldName}${isNull ? '?' : ''}.toIso8601String(),\n`
+      for (const child of children) {
+        const key = child.key
+        const fieldName = toCamelCase(key)
+        const hasDefault = checkDefault && getDartDefault(child) !== null
+        const isNullable = !child.isRequired && !hasDefault
+
+        if (child.inferredType === 'object') {
+          if (isNullable) {
+            code += `        "${key}": ${fieldName}?.toJson(),\n`
           } else {
-            code += `        "${key}": ${fieldName},\n`
+            code += `        "${key}": ${fieldName}.toJson(),\n`
           }
+        } else if (child.inferredType === 'array' && child.children?.[0]?.inferredType === 'object') {
+          if (isNullable) {
+            code += `        "${key}": ${fieldName} == null ? [] : List<dynamic>.from(${fieldName}!.map((x) => x.toJson())),\n`
+          } else {
+            code += `        "${key}": List<dynamic>.from(${fieldName}.map((x) => x.toJson())),\n`
+          }
+        } else if (child.inferredType === 'array') {
+          if (isNullable) {
+            code += `        "${key}": ${fieldName} == null ? [] : List<dynamic>.from(${fieldName}!.map((x) => x)),\n`
+          } else {
+            code += `        "${key}": List<dynamic>.from(${fieldName}.map((x) => x)),\n`
+          }
+        } else if (child.inferredType === 'date') {
+          if (isNullable) {
+            code += `        "${key}": ${fieldName}?.toIso8601String(),\n`
+          } else {
+            code += `        "${key}": ${fieldName}.toIso8601String(),\n`
+          }
+        } else {
+          code += `        "${key}": ${fieldName},\n`
         }
       }
       code += '    };\n'
@@ -303,10 +365,8 @@ export function useCodeGenerator() {
       // Equatable props
       if (isEquatable) {
         code += '\n    @override\n    List<Object?> get props => [\n'
-        if (model.children) {
-          for (const child of model.children) {
-            code += `        ${toCamelCase(child.key)},\n`
-          }
+        for (const child of children) {
+          code += `        ${toCamelCase(child.key)},\n`
         }
         code += '    ];\n'
       }
@@ -317,8 +377,7 @@ export function useCodeGenerator() {
   }
 
   function generateFreezed(models: ASTNode[], checkDefault: boolean = true): string {
-    let code = "import 'package:freezed_annotation/freezed_annotation.dart';\n"
-    code += "\n"
+    let code = "import 'package:freezed_annotation/freezed_annotation.dart';\n\n"
     code += "part 'models.freezed.dart';\n"
     code += "part 'models.g.dart';\n\n"
 
@@ -326,22 +385,29 @@ export function useCodeGenerator() {
       code += '@freezed\n'
       code += `class ${model.typeName} with _\$${model.typeName} {\n`
       code += `  const factory ${model.typeName}({\n`
-      if (model.children) {
-        for (const child of model.children) {
-          const typeStr = getDartType(child)
-          const isNull = child.isNullable || child.isOptional
-          let defaultAnnot = ''
-          if (checkDefault && !isNull) {
-            if (child.inferredType === 'number' && child.isInteger) defaultAnnot = '@Default(0) '
-            else if (child.inferredType === 'number' && !child.isInteger) defaultAnnot = '@Default(0.0) '
-            else if (child.inferredType === 'string' || child.inferredType === 'uuid' || child.inferredType === 'color') defaultAnnot = "@Default('') "
-            else if (child.inferredType === 'boolean') defaultAnnot = '@Default(false) '
-            else if (child.inferredType === 'array') defaultAnnot = '@Default([]) '
-          }
-          const requiredPrefix = isNull ? '' : (defaultAnnot ? '' : 'required ')
-          code += `    ${defaultAnnot}${requiredPrefix}${typeStr}${isNull ? '?' : ''} ${child.key},\n`
+      const children = model.children || []
+
+      const reqFields: string[] = []
+      const defFields: string[] = []
+      const optFields: string[] = []
+
+      for (const child of children) {
+        const typeStr = getDartType(child)
+        const defVal = checkDefault ? getDartDefault(child) : null
+
+        if (defVal !== null) {
+          defFields.push(`    @Default(${defVal}) ${typeStr} ${child.key},\n`)
+        } else if (child.isRequired) {
+          reqFields.push(`    required ${typeStr} ${child.key},\n`)
+        } else {
+          optFields.push(`    ${typeStr}? ${child.key},\n`)
         }
       }
+
+      code += reqFields.join('')
+      code += defFields.join('')
+      code += optFields.join('')
+
       code += `  }) = _${model.typeName};\n\n`
       code += `  factory ${model.typeName}.fromJson(Map<String, dynamic> json) => _\$${model.typeName}FromJson(json);\n`
       code += '}\n\n'
@@ -350,37 +416,52 @@ export function useCodeGenerator() {
   }
 
   function generateJsonSerializable(models: ASTNode[], checkDefault: boolean = true): string {
-    let code = "import 'package:json_annotation/json_annotation.dart';\n"
-    code += "\n"
+    let code = "import 'package:json_annotation/json_annotation.dart';\n\n"
     code += "part 'models.g.dart';\n\n"
 
     for (const model of models) {
       code += '@JsonSerializable(explicitToJson: true)\n'
       code += `class ${model.typeName} {\n`
-      if (model.children) {
-        for (const child of model.children) {
-          const typeStr = getDartType(child)
-          const isNull = child.isNullable || child.isOptional
-          let jsonKey = ''
-          if (checkDefault && !isNull) {
-            if (child.inferredType === 'number' && child.isInteger) jsonKey = '  @JsonKey(defaultValue: 0)\n'
-            else if (child.inferredType === 'number' && !child.isInteger) jsonKey = '  @JsonKey(defaultValue: 0.0)\n'
-            else if (child.inferredType === 'string' || child.inferredType === 'uuid' || child.inferredType === 'color') jsonKey = "  @JsonKey(defaultValue: '')\n"
-            else if (child.inferredType === 'boolean') jsonKey = '  @JsonKey(defaultValue: false)\n'
-            else if (child.inferredType === 'array') jsonKey = '  @JsonKey(defaultValue: [])\n'
-          }
-          code += `${jsonKey}  final ${typeStr}${isNull ? '?' : ''} ${child.key};\n`
+      const children = model.children || []
+
+      // Fields
+      for (const child of children) {
+        const typeStr = getDartType(child)
+        const defVal = checkDefault ? getDartDefault(child) : null
+
+        if (defVal !== null) {
+          code += `  @JsonKey(defaultValue: ${defVal})\n`
+          code += `  final ${typeStr} ${child.key};\n`
+        } else if (child.isRequired) {
+          code += `  @JsonKey(required: true)\n`
+          code += `  final ${typeStr} ${child.key};\n`
+        } else {
+          code += `  final ${typeStr}? ${child.key};\n`
         }
       }
       code += '\n'
+
+      // Constructor (required first, then default values, then optional)
       code += `  ${model.typeName}({\n`
-      if (model.children) {
-        for (const child of model.children) {
-          const isNull = child.isNullable || child.isOptional
-          code += `    ${isNull ? '' : 'required '}this.${child.key},\n`
+      const reqFields: string[] = []
+      const defFields: string[] = []
+      const optFields: string[] = []
+
+      for (const child of children) {
+        const defVal = checkDefault ? getDartDefault(child) : null
+        if (defVal !== null) {
+          defFields.push(`    this.${child.key} = ${defVal},\n`)
+        } else if (child.isRequired) {
+          reqFields.push(`    required this.${child.key},\n`)
+        } else {
+          optFields.push(`    this.${child.key},\n`)
         }
       }
+      code += reqFields.join('')
+      code += defFields.join('')
+      code += optFields.join('')
       code += '  });\n\n'
+
       code += `  factory ${model.typeName}.fromJson(Map<String, dynamic> json) => _\$${model.typeName}FromJson(json);\n`
       code += `  Map<String, dynamic> toJson() => _\$${model.typeName}ToJson(this);\n`
       code += '}\n\n'
@@ -403,26 +484,24 @@ export function useCodeGenerator() {
     let code = "<?php\n\nnamespace App\\Models;\n\n"
     for (const model of models) {
       code += `class ${model.typeName}\n{\n`
-      if (model.children) {
-        for (const child of model.children) {
-          const typeStr = getPhpType(child)
-          const nullable = child.isNullable || child.isOptional ? '?' : ''
-          code += `    public ${nullable}${typeStr} $${child.key};\n`
+      const children = model.children || []
+
+      // Promoted Constructor: required first, optional with = null after
+      code += `    public function __construct(\n`
+      const reqList: string[] = []
+      const optList: string[] = []
+
+      for (const child of children) {
+        const typeStr = getPhpType(child)
+        if (child.isRequired) {
+          reqList.push(`        public ${typeStr} $${child.key},\n`)
+        } else {
+          optList.push(`        public ?${typeStr} $${child.key} = null,\n`)
         }
-        code += '\n'
-        // Constructor
-        code += `    public function __construct(\n`
-        for (const child of model.children) {
-          const typeStr = getPhpType(child)
-          const nullable = child.isNullable || child.isOptional ? '?' : ''
-          code += `        ${nullable}${typeStr} $${child.key},\n`
-        }
-        code += `    ) {\n`
-        for (const child of model.children) {
-          code += `        $this->${child.key} = $${child.key};\n`
-        }
-        code += `    }\n`
       }
+      code += reqList.join('')
+      code += optList.join('')
+      code += `    ) {}\n`
       code += '}\n\n'
     }
     return code.trim()
@@ -436,7 +515,6 @@ export function useCodeGenerator() {
     if (style === 'resource') {
       for (const model of models) {
         code += `class ${model.typeName}Resource extends JsonResource\n{\n`
-        code += '    /**\n     * Transform the resource into an array.\n     *\n     * @return array<string, mixed>\n     */\n'
         code += '    public function toArray(Request $request): array\n    {\n'
         code += '        return [\n'
         if (model.children) {
@@ -463,7 +541,7 @@ export function useCodeGenerator() {
       return code.trim()
     }
 
-    // Default: Laravel Model
+    // Default: Laravel Model with rules()
     code = "<?php\n\nnamespace App\\Models;\n\nuse Illuminate\\Database\\Eloquent\\Model;\n\n"
     for (const model of models) {
       code += `class ${model.typeName} extends Model\n{\n`
@@ -475,19 +553,17 @@ export function useCodeGenerator() {
         }
       }
       code += '    ];\n\n'
-      code += '    protected $casts = [\n'
+
+      // Validation Rules
+      code += '    public static function rules(): array\n    {\n        return [\n'
       if (model.children) {
         for (const child of model.children) {
-          if (child.inferredType === 'date') {
-            code += `        '${child.key}' => 'datetime',\n`
-          } else if (child.inferredType === 'boolean') {
-            code += `        '${child.key}' => 'boolean',\n`
-          } else if (child.inferredType === 'array' || child.inferredType === 'object') {
-            code += `        '${child.key}' => 'array',\n`
-          }
+          const rule = child.isRequired ? 'required' : 'nullable'
+          code += `            '${child.key}' => '${rule}',\n`
         }
       }
-      code += '    ];\n'
+      code += '        ];\n    }\n'
+
       code += '}\n\n'
     }
     return code.trim()
@@ -510,38 +586,46 @@ export function useCodeGenerator() {
   function generateJava(models: ASTNode[], style: string): string {
     let code = ''
     for (const model of models) {
+      const children = model.children || []
+
       if (style === 'record') {
+        // Record constructor: required params first, followed by compact constructor null checks
+        const reqFields = children.filter(c => c.isRequired)
+        const optFields = children.filter(c => !c.isRequired)
+        const ordered = [...reqFields, ...optFields]
+
         code += `public record ${model.typeName}(\n`
-        if (model.children) {
-          const params = model.children.map(child => `    ${getJavaType(child)} ${child.key}`)
-          code += params.join(',\n')
+        code += ordered.map(child => `    ${getJavaType(child)} ${child.key}`).join(',\n')
+        code += '\n) {\n'
+
+        if (reqFields.length > 0) {
+          code += `    public ${model.typeName} {\n`
+          for (const req of reqFields) {
+            code += `        java.util.Objects.requireNonNull(${req.key}, "${req.key} must not be null");\n`
+          }
+          code += '    }\n'
         }
-        code += '\n) {}\n\n'
+        code += '}\n\n'
       } else {
         const isLombok = style === 'lombok'
         if (isLombok) {
           code += '@lombok.Data\n@lombok.NoArgsConstructor\n@lombok.AllArgsConstructor\n'
         }
         code += `public class ${model.typeName} {\n`
-        if (model.children) {
-          for (const child of model.children) {
-            code += `    private ${getJavaType(child)} ${child.key};\n`
+        for (const child of children) {
+          if (child.isRequired) {
+            code += isLombok ? '    @lombok.NonNull\n' : '    @jakarta.validation.constraints.NotNull\n'
           }
-          if (!isLombok) {
-            // Getters/Setters
-            code += '\n'
-            for (const child of model.children) {
-              const typeStr = getJavaType(child)
-              const capKey = child.key.charAt(0).toUpperCase() + child.key.slice(1)
-              // Getter
-              code += `    public ${typeStr} get${capKey}() {\n`
-              code += `        return this.${child.key};\n`
-              code += '    }\n\n'
-              // Setter
-              code += `    public void set${capKey}(${typeStr} ${child.key}) {\n`
-              code += `        this.${child.key} = ${child.key};\n`
-              code += '    }\n\n'
-            }
+          code += `    private ${getJavaType(child)} ${child.key};\n`
+        }
+
+        if (!isLombok) {
+          code += '\n'
+          for (const child of children) {
+            const typeStr = getJavaType(child)
+            const capKey = child.key.charAt(0).toUpperCase() + child.key.slice(1)
+            code += `    public ${typeStr} get${capKey}() {\n        return this.${child.key};\n    }\n\n`
+            code += `    public void set${capKey}(${typeStr} ${child.key}) {\n        this.${child.key} = ${child.key};\n    }\n\n`
           }
         }
         code += '}\n\n'
@@ -574,6 +658,16 @@ export function useCodeGenerator() {
             }
             first = false
           }
+          if (isEntity) {
+            if (child.isRequired) {
+              code += '    @jakarta.persistence.Column(nullable = false)\n'
+              code += '    @jakarta.validation.constraints.NotNull\n'
+            } else {
+              code += '    @jakarta.persistence.Column(nullable = true)\n'
+            }
+          } else if (child.isRequired) {
+            code += '    @jakarta.validation.constraints.NotNull\n'
+          }
           code += `    private ${getJavaType(child)} ${child.key};\n`
         }
       }
@@ -594,17 +688,29 @@ export function useCodeGenerator() {
       const child = node.children?.[0]
       base = `List<${child ? getKotlinType(child) : 'Any'}>`
     }
-    return base + (node.isNullable || node.isOptional ? '?' : '')
+    return base
   }
 
-  function generateKotlin(models: ASTNode[], style: string): string {
+  function generateKotlin(models: ASTNode[], style: string, checkDefault: boolean = true): string {
     let code = ''
     for (const model of models) {
       code += `data class ${model.typeName}(\n`
-      if (model.children) {
-        const fields = model.children.map(child => `    val ${child.key}: ${getKotlinType(child)}`)
-        code += fields.join(',\n')
+      const children = model.children || []
+
+      // Required parameters first, optional parameters (= null / default) after
+      const reqList: string[] = []
+      const optList: string[] = []
+
+      for (const child of children) {
+        const baseType = getKotlinType(child)
+        if (child.isRequired) {
+          reqList.push(`    val ${child.key}: ${baseType}`)
+        } else {
+          optList.push(`    val ${child.key}: ${baseType}? = null`)
+        }
       }
+
+      code += [...reqList, ...optList].join(',\n')
       code += '\n)\n\n'
     }
     return code.trim()
@@ -622,7 +728,7 @@ export function useCodeGenerator() {
       const child = node.children?.[0]
       base = `[${child ? getSwiftType(child) : 'Any'}]`
     }
-    return base + (node.isNullable || node.isOptional ? '?' : '')
+    return base
   }
 
   function generateSwift(models: ASTNode[], style: string): string {
@@ -631,7 +737,9 @@ export function useCodeGenerator() {
       code += `struct ${model.typeName}: Codable {\n`
       if (model.children) {
         for (const child of model.children) {
-          code += `    let ${child.key}: ${getSwiftType(child)}\n`
+          const baseType = getSwiftType(child)
+          const opt = child.isRequired ? '' : '?'
+          code += `    let ${child.key}: ${baseType}${opt}\n`
         }
       }
       code += '}\n\n'
@@ -651,7 +759,7 @@ export function useCodeGenerator() {
       const child = node.children?.[0]
       base = `[]${child ? getGoType(child) : 'interface{}'}`
     }
-    return (node.isNullable || node.isOptional ? '*' : '') + base
+    return base
   }
 
   function generateGo(models: ASTNode[], style: string): string {
@@ -661,7 +769,12 @@ export function useCodeGenerator() {
       if (model.children) {
         for (const child of model.children) {
           const capName = child.key.charAt(0).toUpperCase() + child.key.slice(1)
-          code += `\t${capName} ${getGoType(child)} \`json:"${child.key}${child.isOptional ? ',omitempty' : ''}"\`\n`
+          const baseType = getGoType(child)
+          if (child.isRequired) {
+            code += `\t${capName} ${baseType} \`json:"${child.key}"\`\n`
+          } else {
+            code += `\t${capName} *${baseType} \`json:"${child.key},omitempty"\`\n`
+          }
         }
       }
       code += '}\n\n'
@@ -681,29 +794,41 @@ export function useCodeGenerator() {
       const child = node.children?.[0]
       base = `List<${child ? getCSharpType(child) : 'object'}>`
     }
-    return base + (node.isNullable || node.isOptional ? '?' : '')
+    return base
   }
 
   function generateCSharp(models: ASTNode[], style: string): string {
     let code = "using System;\nusing System.Collections.Generic;\nusing System.Text.Json.Serialization;\n\nnamespace App.Models\n{\n"
     for (const model of models) {
+      const children = model.children || []
+
       if (style === 'record') {
         code += `    public record ${model.typeName}(\n`
-        if (model.children) {
-          const params = model.children.map(child => {
-            const capName = child.key.charAt(0).toUpperCase() + child.key.slice(1)
-            return `        [property: JsonPropertyName("${child.key}")] ${getCSharpType(child)} ${capName}`
-          })
-          code += params.join(',\n')
+        const reqList: string[] = []
+        const optList: string[] = []
+
+        for (const child of children) {
+          const capName = child.key.charAt(0).toUpperCase() + child.key.slice(1)
+          const baseType = getCSharpType(child)
+          if (child.isRequired) {
+            reqList.push(`        [property: JsonPropertyName("${child.key}")] ${baseType} ${capName}`)
+          } else {
+            optList.push(`        [property: JsonPropertyName("${child.key}")] ${baseType}? ${capName} = null`)
+          }
         }
+        code += [...reqList, ...optList].join(',\n')
         code += '\n    );\n\n'
       } else {
+        // C# 11 required property
         code += `    public class ${model.typeName}\n    {\n`
-        if (model.children) {
-          for (const child of model.children) {
-            const capName = child.key.charAt(0).toUpperCase() + child.key.slice(1)
-            code += `        [JsonPropertyName("${child.key}")]\n`
-            code += `        public ${getCSharpType(child)} ${capName} { get; set; }\n\n`
+        for (const child of children) {
+          const capName = child.key.charAt(0).toUpperCase() + child.key.slice(1)
+          const baseType = getCSharpType(child)
+          code += `        [JsonPropertyName("${child.key}")]\n`
+          if (child.isRequired) {
+            code += `        public required ${baseType} ${capName} { get; set; }\n\n`
+          } else {
+            code += `        public ${baseType}? ${capName} { get; set; }\n\n`
           }
         }
         code += '    }\n\n'
@@ -714,7 +839,7 @@ export function useCodeGenerator() {
   }
 
   function generateAspNet(models: ASTNode[], style: string): string {
-    let code = "using System;\nusing System.ComponentModel.DataAnnotations;\n\nnamespace App.Entities\n{\n"
+    let code = "using System;\nusing System.ComponentModel.DataAnnotations;\nusing System.Text.Json.Serialization;\n\nnamespace App.Entities\n{\n"
     const isEntity = style === 'entity'
 
     for (const model of models) {
@@ -723,14 +848,17 @@ export function useCodeGenerator() {
         let first = true
         for (const child of model.children) {
           const capName = child.key.charAt(0).toUpperCase() + child.key.slice(1)
+          const baseType = getCSharpType(child)
           if (isEntity && first) {
             code += '        [Key]\n'
             first = false
           }
-          if (!child.isNullable && !child.isOptional) {
+          if (child.isRequired) {
             code += '        [Required]\n'
           }
-          code += `        public ${getCSharpType(child)} ${capName} { get; set; }\n\n`
+          code += `        [JsonPropertyName("${child.key}")]\n`
+          const opt = child.isRequired ? '' : '?'
+          code += `        public ${baseType}${opt} ${capName} { get; set; }\n\n`
         }
       }
       code += '    }\n\n'
@@ -744,7 +872,7 @@ export function useCodeGenerator() {
     let code = ''
     const isDto = style === 'dto'
     if (isDto) {
-      code += "import { IsString, IsNumber, IsBoolean, IsOptional, IsArray, ValidateNested } from 'class-validator';\n"
+      code += "import { IsString, IsNumber, IsBoolean, IsOptional, IsNotEmpty, IsArray, ValidateNested } from 'class-validator';\n"
       code += "import { Type } from 'class-transformer';\n\n"
     } else {
       code += "import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';\n\n"
@@ -755,40 +883,49 @@ export function useCodeGenerator() {
         code += `export class ${model.typeName}Dto {\n`
         if (model.children) {
           for (const child of model.children) {
-            if (child.isOptional || child.isNullable) {
+            if (child.isRequired) {
+              code += '  @IsNotEmpty()\n'
+            } else {
               code += '  @IsOptional()\n'
             }
-            if (child.inferredType === 'string' || child.inferredType === 'uuid') {
+
+            if (child.inferredType === 'string' || child.inferredType === 'uuid' || child.inferredType === 'color' || child.inferredType === 'date') {
               code += '  @IsString()\n'
             } else if (child.inferredType === 'number') {
               code += '  @IsNumber()\n'
             } else if (child.inferredType === 'boolean') {
               code += '  @IsBoolean()\n'
-            } else if (child.inferredType === 'object') {
-              code += `  @ValidateNested()\n  @Type(() => ${child.typeName}Dto)\n`
             } else if (child.inferredType === 'array') {
               code += '  @IsArray()\n'
               if (child.children?.[0]?.inferredType === 'object') {
                 code += `  @ValidateNested({ each: true })\n  @Type(() => ${child.children[0].typeName}Dto)\n`
               }
+            } else if (child.inferredType === 'object') {
+              code += `  @ValidateNested()\n  @Type(() => ${child.typeName}Dto)\n`
             }
-            code += `  ${child.key}${child.isOptional ? '?' : ''}: ${getTsType(child)};\n\n`
+
+            const opt = child.isRequired ? '' : '?'
+            code += `  ${child.key}${opt}: ${getTsType(child)};\n\n`
           }
         }
         code += '}\n\n'
       } else {
-        code += `@Entity('${model.typeName.toLowerCase()}s')\n`
-        code += `export class ${model.typeName}Entity {\n`
+        code += `@Entity('${model.typeName.toLowerCase()}s')\nexport class ${model.typeName}Entity {\n`
         if (model.children) {
           let first = true
           for (const child of model.children) {
             if (first) {
-              code += `  @PrimaryGeneratedColumn(${child.inferredType === 'uuid' ? "'uuid'" : ''})\n`
+              code += '  @PrimaryGeneratedColumn()\n  id: number;\n\n'
               first = false
-            } else {
-              code += '  @Column()\n'
+              if (child.key === 'id') continue
             }
-            code += `  ${child.key}: ${getTsType(child)};\n\n`
+            if (child.isRequired) {
+              code += '  @Column()\n'
+              code += `  ${child.key}: ${getTsType(child)};\n\n`
+            } else {
+              code += '  @Column({ nullable: true })\n'
+              code += `  ${child.key}?: ${getTsType(child)};\n\n`
+            }
           }
         }
         code += '}\n\n'
@@ -797,30 +934,27 @@ export function useCodeGenerator() {
     return code.trim()
   }
 
-  // --- JAVASCRIPT / JSDOC ---
+  // --- JAVASCRIPT (JSDoc) ---
   function generateJavaScript(models: ASTNode[], style: string): string {
     let code = ''
     for (const model of models) {
-      code += `/**\n * @typedef {Object} ${model.typeName}\n`
+      code += '/**\n'
+      code += ` * @typedef {Object} ${model.typeName}\n`
       if (model.children) {
         for (const child of model.children) {
           let jsDocType = 'any'
-          if (child.inferredType === 'string' || child.inferredType === 'uuid') jsDocType = 'string'
+          if (child.inferredType === 'string' || child.inferredType === 'uuid' || child.inferredType === 'color') jsDocType = 'string'
           else if (child.inferredType === 'number') jsDocType = 'number'
           else if (child.inferredType === 'boolean') jsDocType = 'boolean'
           else if (child.inferredType === 'date') jsDocType = 'string|Date'
           else if (child.inferredType === 'object') jsDocType = child.typeName || 'Object'
           else if (child.inferredType === 'array') {
-            const childEl = child.children?.[0]
-            jsDocType = childEl ? `Array<${childEl.typeName || childEl.inferredType}>` : 'Array'
-          }
-          else if (child.inferredType === 'union') {
-            const members = (child.unionTypes || []).map(m => m.typeName || m.inferredType)
-            jsDocType = members.length ? Array.from(new Set(members)).join('|') : 'any'
+            const childElem = child.children?.[0]
+            jsDocType = childElem?.typeName ? `${childElem.typeName}[]` : 'Array'
           }
 
-          if (child.isNullable) jsDocType += '|null'
-          const keyStr = child.isOptional ? `[${child.key}]` : child.key
+          if (child.isNullable || (!child.isRequired && child.everNull)) jsDocType += '|null'
+          const keyStr = child.isRequired ? child.key : `[${child.key}]`
           code += ` * @property {${jsDocType}} ${keyStr}\n`
         }
       }
@@ -831,10 +965,8 @@ export function useCodeGenerator() {
 
   // --- PRISMA SCHEMA ---
   function getPrismaType(node: ASTNode): string {
-    if (node.inferredType === 'string') return 'String'
-    if (node.inferredType === 'uuid') return 'String'
-    if (node.inferredType === 'color') return 'String'
-    if (node.inferredType === 'number') return 'Float' // or Int
+    if (node.inferredType === 'string' || node.inferredType === 'uuid' || node.inferredType === 'color') return 'String'
+    if (node.inferredType === 'number') return node.isInteger ? 'Int' : 'Float'
     if (node.inferredType === 'boolean') return 'Boolean'
     if (node.inferredType === 'date') return 'DateTime'
     if (node.inferredType === 'object') return node.typeName || 'Json'
@@ -859,12 +991,11 @@ export function useCodeGenerator() {
             if (child.inferredType === 'uuid') {
               decorators += ' @default(uuid())'
             } else if (child.inferredType === 'number') {
-              typeStr = 'Int'
               decorators += ' @default(autoincrement())'
             }
             first = false
           }
-          const nullable = child.isNullable || child.isOptional ? '?' : ''
+          const nullable = child.isRequired ? '' : '?'
           code += `  ${child.key} ${typeStr}${nullable}${decorators}\n`
         }
       }
@@ -897,7 +1028,7 @@ export function useCodeGenerator() {
       if (model.children) {
         for (const child of model.children) {
           const typeStr = getMongooseType(child)
-          const req = !child.isNullable && !child.isOptional ? ', required: true' : ''
+          const req = child.isRequired ? ', required: true' : ''
           code += `  ${child.key}: { type: ${typeStr}${req} },\n`
         }
       }
@@ -911,7 +1042,7 @@ export function useCodeGenerator() {
       if (root.children) {
         for (const child of root.children) {
           const typeStr = getMongooseType(child)
-          const req = !child.isNullable && !child.isOptional ? ', required: true' : ''
+          const req = child.isRequired ? ', required: true' : ''
           code += `  ${child.key}: { type: ${typeStr}${req} },\n`
         }
       }
@@ -931,7 +1062,7 @@ export function useCodeGenerator() {
         let first = true
         for (const child of model.children) {
           let seqType = 'DataTypes.STRING'
-          if (child.inferredType === 'number') seqType = 'DataTypes.DOUBLE'
+          if (child.inferredType === 'number') seqType = child.isInteger ? 'DataTypes.INTEGER' : 'DataTypes.DOUBLE'
           else if (child.inferredType === 'boolean') seqType = 'DataTypes.BOOLEAN'
           else if (child.inferredType === 'date') seqType = 'DataTypes.DATE'
           else if (child.inferredType === 'array' || child.inferredType === 'object') seqType = 'DataTypes.JSON'
@@ -945,7 +1076,7 @@ export function useCodeGenerator() {
             }
             first = false
           }
-          code += `    allowNull: ${child.isNullable || child.isOptional ? 'true' : 'false'}\n`
+          code += `    allowNull: ${child.isRequired ? 'false' : 'true'}\n`
           code += '  },\n'
         }
       }
@@ -962,14 +1093,14 @@ export function useCodeGenerator() {
   // --- GRAPHQL ---
   function getGraphQlType(node: ASTNode): string {
     let base = 'String'
-    if (node.inferredType === 'number') base = 'Float'
+    if (node.inferredType === 'number') base = node.isInteger ? 'Int' : 'Float'
     else if (node.inferredType === 'boolean') base = 'Boolean'
     else if (node.inferredType === 'object') base = node.typeName || 'JSON'
     else if (node.inferredType === 'array') {
       const child = node.children?.[0]
       base = `[${child ? getGraphQlType(child) : 'JSON'}]`
     }
-    return base + (node.isNullable || node.isOptional ? '' : '!')
+    return base + (node.isRequired ? '!' : '')
   }
 
   function generateGraphQL(models: ASTNode[], style: string): string {
@@ -992,7 +1123,7 @@ export function useCodeGenerator() {
     if (node.inferredType === 'string') return { type: 'string' }
     if (node.inferredType === 'uuid') return { type: 'string', format: 'uuid' }
     if (node.inferredType === 'color') return { type: 'string', format: 'color' }
-    if (node.inferredType === 'number') return { type: 'number' }
+    if (node.inferredType === 'number') return { type: node.isInteger ? 'integer' : 'number' }
     if (node.inferredType === 'boolean') return { type: 'boolean' }
     if (node.inferredType === 'date') return { type: 'string', format: 'date-time' }
     if (node.inferredType === 'object') return { $ref: `#/components/schemas/${node.typeName}` }
@@ -1018,7 +1149,7 @@ export function useCodeGenerator() {
       if (model.children) {
         for (const child of model.children) {
           properties[child.key] = getOpenApiType(child)
-          if (!child.isNullable && !child.isOptional) {
+          if (child.isRequired) {
             required.push(child.key)
           }
         }
@@ -1068,10 +1199,10 @@ export function useCodeGenerator() {
       const members = (node.unionTypes || []).map(getPythonType)
       base = members.length ? `Union[${Array.from(new Set(members)).join(', ')}]` : 'Any'
     }
-    return (node.isNullable || node.isOptional) ? `Optional[${base}]` : base
+    return base
   }
 
-  function generatePython(models: ASTNode[], style: string): string {
+  function generatePython(models: ASTNode[], style: string, checkDefault: boolean = true): string {
     const isPydantic = style === 'pydantic'
     const isTypedDict = style === 'typeddict'
 
@@ -1079,6 +1210,9 @@ export function useCodeGenerator() {
     header += 'from typing import List, Optional, Union, Any'
     if (isTypedDict) header += ', TypedDict'
     header += '\n'
+    if (isTypedDict) {
+      header += 'from typing_extensions import Required, NotRequired\n'
+    }
     header += 'from datetime import datetime\n'
     if (isPydantic) header += 'from pydantic import BaseModel\n'
     else if (!isTypedDict) header += 'from dataclasses import dataclass\n'
@@ -1093,13 +1227,37 @@ export function useCodeGenerator() {
       } else {
         code += `@dataclass\nclass ${model.typeName}:\n`
       }
+
       const children = model.children || []
       if (children.length === 0) {
         code += '    pass\n'
-      } else {
+      } else if (isTypedDict) {
         for (const child of children) {
-          code += `    ${snakeCase(child.key)}: ${getPythonType(child)}\n`
+          const baseType = getPythonType(child)
+          if (child.isRequired) {
+            code += `    ${snakeCase(child.key)}: Required[${baseType}]\n`
+          } else {
+            code += `    ${snakeCase(child.key)}: NotRequired[${baseType}]\n`
+          }
         }
+      } else {
+        // Dataclass / Pydantic: Required fields (no default) MUST precede optional fields (= None)
+        const reqList: string[] = []
+        const optList: string[] = []
+
+        for (const child of children) {
+          const baseType = getPythonType(child)
+          const fieldName = snakeCase(child.key)
+          if (child.isRequired) {
+            reqList.push(`    ${fieldName}: ${baseType}\n`)
+          } else {
+            reqList.push = reqList.push // noop
+            optList.push(`    ${fieldName}: Optional[${baseType}] = None\n`)
+          }
+        }
+
+        code += reqList.join('')
+        code += optList.join('')
       }
       code += '\n\n'
     }
@@ -1119,7 +1277,7 @@ export function useCodeGenerator() {
       base = `Vec<${child ? getRustType(child) : 'serde_json::Value'}>`
     }
     else if (node.inferredType === 'union') base = 'serde_json::Value'
-    return (node.isNullable || node.isOptional) ? `Option<${base}>` : base
+    return base
   }
 
   function generateRust(models: ASTNode[]): string {
@@ -1133,7 +1291,13 @@ export function useCodeGenerator() {
           if (field !== child.key) {
             code += `    #[serde(rename = "${child.key}")]\n`
           }
-          code += `    pub ${field}: ${getRustType(child)},\n`
+          const baseType = getRustType(child)
+          if (child.isRequired) {
+            code += `    pub ${field}: ${baseType},\n`
+          } else {
+            code += `    #[serde(skip_serializing_if = "Option::is_none")]\n`
+            code += `    pub ${field}: Option<${baseType}>,\n`
+          }
         }
       }
       code += '}\n\n'
@@ -1158,8 +1322,15 @@ export function useCodeGenerator() {
       const members = (node.unionTypes || []).map(getZodType)
       base = members.length > 1 ? `z.union([${members.join(', ')}])` : (members[0] || 'z.any()')
     }
-    if (node.isNullable) base += '.nullable()'
-    if (node.isOptional) base += '.optional()'
+
+    if (!node.isRequired) {
+      if (node.isNullable || node.everNull) {
+        base += '.nullable()'
+      }
+      base += '.optional()'
+    } else if (node.isNullable) {
+      base += '.nullable()'
+    }
     return base
   }
 
@@ -1206,7 +1377,9 @@ export function useCodeGenerator() {
       if (model.children) {
         for (const child of model.children) {
           properties[child.key] = getJsonSchemaType(child)
-          if (!child.isNullable && !child.isOptional) required.push(child.key)
+          if (child.isRequired) {
+            required.push(child.key)
+          }
         }
       }
       definitions[model.typeName || 'Root'] = {
@@ -1215,7 +1388,6 @@ export function useCodeGenerator() {
         ...(required.length ? { required } : {})
       }
     }
-    // Root is the last model emitted (collectModels reverses dependencies first).
     const rootName = models[models.length - 1]?.typeName || 'Root'
     const doc = {
       $schema: 'http://json-schema.org/draft-07/schema#',

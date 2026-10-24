@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import IdeTitleBar from '../components/ide/IdeTitleBar.vue'
 import IdeActivityBar from '../components/ide/IdeActivityBar.vue'
 import IdeSidebar from '../components/ide/IdeSidebar.vue'
@@ -20,27 +21,30 @@ const handleSelectTab = (tab: string) => {
 </script>
 
 <template>
-  <div class="h-screen w-screen overflow-hidden flex flex-col relative font-sans antialiased select-none text-[#cccccc]">
-    <!-- Scenic Atmospheric Glass Backdrop -->
+  <div
+    class="h-screen w-screen overflow-hidden flex flex-col relative font-sans antialiased select-none text-white/90"
+    :style="{ '--glass-intensity': generatorStore.glassIntensity }"
+  >
+    <!-- Scenic Atmospheric Glass Backdrop Wallpaper -->
     <div
       class="absolute inset-0 bg-cover bg-center bg-no-repeat pointer-events-none z-0 scale-105 transition-transform duration-1000"
       style="background-image: url('/images/glass_backdrop.jpg');"
     >
-      <!-- Deep tinted translucent overlay so code text is crisp & readable with frosted blur -->
-      <div class="absolute inset-0 bg-gradient-to-b from-[#0a0c12]/70 via-[#0d1017]/65 to-[#08090e]/80"></div>
+      <!-- Refined liquid diffusion gradient overlay -->
+      <div class="absolute inset-0 bg-gradient-to-b from-[#06080e]/65 via-[#0b0e17]/60 to-[#04060a]/75 backdrop-blur-[2px]"></div>
     </div>
 
-    <!-- IDE Shell (Translucent Frosted Glass Architecture) -->
+    <!-- IDE Shell (iOS 27 Liquid Glass Architecture) -->
     <div class="relative z-10 flex flex-col h-full w-full overflow-hidden">
-      <!-- Top Title & Menu Bar -->
+      <!-- Top Floating Toolbar Capsule -->
       <IdeTitleBar
         @generate="generatorStore.requestGenerate"
         @toggleSidebar="generatorStore.isSidebarOpen = !generatorStore.isSidebarOpen"
       />
 
-      <!-- IDE Center: Activity Bar + Sidebar + Main Workspace -->
-      <div class="flex-1 flex overflow-hidden relative">
-        <!-- Activity Bar (Far Left Rail) -->
+      <!-- IDE Center: Activity Rail + Inset Sidebar + Main Workspace -->
+      <div class="flex-1 flex flex-col md:flex-row overflow-hidden relative min-h-0">
+        <!-- Activity Rail (Floating pill rail on desktop, bottom bar on mobile) -->
         <IdeActivityBar
           :activeTab="generatorStore.activeActivityTab"
           :isSidebarOpen="generatorStore.isSidebarOpen"
@@ -48,7 +52,7 @@ const handleSelectTab = (tab: string) => {
           @toggleShortcuts="generatorStore.showShortcuts = !generatorStore.showShortcuts"
         />
 
-        <!-- Primary Sidebar (Collapsible Explorer / Config) -->
+        <!-- Primary Inset Sidebar (Collapsible Options / Config / Samples) -->
         <IdeSidebar
           v-show="generatorStore.isSidebarOpen"
           :activeTab="generatorStore.activeActivityTab"
@@ -56,22 +60,22 @@ const handleSelectTab = (tab: string) => {
           @loadSample="generatorStore.requestLoadSample"
         />
 
-        <!-- Main Editor Workspace -->
-        <main class="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+        <!-- Main Editor Workspace (Liquid Glass Split Cards) -->
+        <main class="flex-1 flex flex-col min-w-0 overflow-hidden relative px-2 mb-2 md:mb-3">
           <slot />
         </main>
       </div>
 
-      <!-- Bottom Status Bar -->
+      <!-- Bottom Floating Status Bar Capsule -->
       <IdeStatusBar
         @toggleShortcuts="generatorStore.showShortcuts = !generatorStore.showShortcuts"
       />
     </div>
 
-    <!-- Shortcuts Drawer -->
+    <!-- Centered Glass Shortcuts Modal -->
     <ShortcutsSidebar v-if="generatorStore.showShortcuts" />
 
-    <!-- Toast Notifications -->
+    <!-- Top Sliding Toast Banners -->
     <ToastList />
   </div>
 </template>

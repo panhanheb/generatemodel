@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { Files, SlidersHorizontal, BookOpen, Layers, Settings, Keyboard, Sparkles, FolderGit2 } from 'lucide-vue-next'
-
+import { computed } from 'vue'
+import {
+  Files,
+  SlidersHorizontal,
+  Search,
+  Layers,
+  Globe,
+  BookOpen,
+  Keyboard
+} from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 
 const props = defineProps<{
@@ -8,12 +16,16 @@ const props = defineProps<{
   isSidebarOpen: boolean
 }>()
 
-const emit = defineEmits(['selectTab', 'toggleSettings', 'toggleShortcuts'])
+const emit = defineEmits<{
+  (e: 'selectTab', tab: string): void
+  (e: 'toggleShortcuts'): void
+}>()
 
 const route = useRoute()
 const router = useRouter()
 
-const isDocActive = computed(() => route.path === '/languages' || route.path === '/docs')
+const isDocActive = computed(() => route.path === '/docs')
+const isLangActive = computed(() => route.path === '/languages')
 
 const handleTabClick = (tab: string) => {
   if (route.path !== '/') {
@@ -24,85 +36,111 @@ const handleTabClick = (tab: string) => {
 </script>
 
 <template>
-  <div class="glass-activity-bar w-12 flex flex-col justify-between items-center py-2 shrink-0 z-20 select-none">
-    <!-- Top Action Icons -->
-    <div class="flex flex-col items-center gap-1 w-full">
+  <nav
+    class="shrink-0 z-30 select-none flex md:flex-col justify-between items-center px-2 py-2 md:py-3 md:w-16 glass-panel rounded-3xl mx-2 mb-2 md:mb-3 md:mt-1 border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.35)]"
+    aria-label="Activity Rail"
+  >
+    <!-- Top Action Items (Desktop) / Left Items (Mobile) -->
+    <div class="flex md:flex-col items-center gap-2 w-full justify-around md:justify-start">
       <!-- Explorer Tab -->
       <button
         @click="handleTabClick('explorer')"
-        title="Explorer (Ctrl+Shift+E)"
-        class="relative w-full h-11 flex items-center justify-center transition-all cursor-pointer group hover:bg-white/5"
-        :class="activeTab === 'explorer' && isSidebarOpen && !isDocActive ? 'text-white' : 'text-[#858585] hover:text-[#cccccc]'"
+        title="Explorer (Workspace)"
+        class="w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-90 cursor-pointer relative"
+        :class="activeTab === 'explorer' && isSidebarOpen && route.path === '/'
+          ? 'bg-blue-500/25 text-[#0A84FF] shadow-[0_0_12px_rgba(10,132,255,0.4)] border border-blue-400/30'
+          : 'text-white/60 hover:text-white hover:bg-white/10'"
       >
-        <div
-          v-if="activeTab === 'explorer' && isSidebarOpen && !isDocActive"
-          class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]"
-        ></div>
-        <Files class="w-5 h-5" />
+        <Files class="w-4 h-4" />
+        <span
+          v-if="activeTab === 'explorer' && isSidebarOpen && route.path === '/'"
+          class="absolute -right-1 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#0A84FF] hidden md:block"
+        ></span>
       </button>
 
-      <!-- Target Configuration / Styles Tab -->
+      <!-- Options / Configuration Tab -->
       <button
         @click="handleTabClick('config')"
-        title="Target Language & Model Configuration"
-        class="relative w-full h-11 flex items-center justify-center transition-all cursor-pointer group hover:bg-white/5"
-        :class="activeTab === 'config' && isSidebarOpen && !isDocActive ? 'text-white' : 'text-[#858585] hover:text-[#cccccc]'"
+        title="Configuration & Required Fields"
+        class="w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-90 cursor-pointer relative"
+        :class="activeTab === 'config' && isSidebarOpen && route.path === '/'
+          ? 'bg-blue-500/25 text-[#0A84FF] shadow-[0_0_12px_rgba(10,132,255,0.4)] border border-blue-400/30'
+          : 'text-white/60 hover:text-white hover:bg-white/10'"
       >
-        <div
-          v-if="activeTab === 'config' && isSidebarOpen && !isDocActive"
-          class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]"
-        ></div>
-        <SlidersHorizontal class="w-5 h-5" />
+        <SlidersHorizontal class="w-4 h-4" />
+        <span
+          v-if="activeTab === 'config' && isSidebarOpen && route.path === '/'"
+          class="absolute -right-1 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#0A84FF] hidden md:block"
+        ></span>
       </button>
 
-      <!-- Samples & Templates Tab -->
+      <!-- Search in Models / Samples -->
+      <button
+        @click="handleTabClick('search')"
+        title="Search & Filters"
+        class="w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-90 cursor-pointer relative"
+        :class="activeTab === 'search' && isSidebarOpen && route.path === '/'
+          ? 'bg-blue-500/25 text-[#0A84FF] shadow-[0_0_12px_rgba(10,132,255,0.4)] border border-blue-400/30'
+          : 'text-white/60 hover:text-white hover:bg-white/10'"
+      >
+        <Search class="w-4 h-4" />
+        <span
+          v-if="activeTab === 'search' && isSidebarOpen && route.path === '/'"
+          class="absolute -right-1 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#0A84FF] hidden md:block"
+        ></span>
+      </button>
+
+      <!-- Samples Library Tab -->
       <button
         @click="handleTabClick('samples')"
-        title="JSON Samples Library"
-        class="relative w-full h-11 flex items-center justify-center transition-all cursor-pointer group hover:bg-white/5"
-        :class="activeTab === 'samples' && isSidebarOpen && !isDocActive ? 'text-white' : 'text-[#858585] hover:text-[#cccccc]'"
+        title="Sample Payloads"
+        class="w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-90 cursor-pointer relative"
+        :class="activeTab === 'samples' && isSidebarOpen && route.path === '/'
+          ? 'bg-blue-500/25 text-[#0A84FF] shadow-[0_0_12px_rgba(10,132,255,0.4)] border border-blue-400/30'
+          : 'text-white/60 hover:text-white hover:bg-white/10'"
       >
-        <div
-          v-if="activeTab === 'samples' && isSidebarOpen && !isDocActive"
-          class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]"
-        ></div>
-        <Layers class="w-5 h-5" />
+        <Layers class="w-4 h-4" />
+        <span
+          v-if="activeTab === 'samples' && isSidebarOpen && route.path === '/'"
+          class="absolute -right-1 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#0A84FF] hidden md:block"
+        ></span>
       </button>
+    </div>
 
-      <!-- Documentation / Languages -->
+    <!-- Bottom Action Items -->
+    <div class="flex md:flex-col items-center gap-2">
+      <!-- Languages Catalog Link -->
       <NuxtLink
         to="/languages"
-        title="Supported Languages & Documentation"
-        class="relative w-full h-11 flex items-center justify-center transition-all cursor-pointer group hover:bg-white/5"
-        :class="isDocActive ? 'text-white' : 'text-[#858585] hover:text-[#cccccc]'"
+        title="Supported Languages (24+)"
+        class="w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-90 cursor-pointer"
+        :class="isLangActive
+          ? 'bg-blue-500/25 text-[#0A84FF] shadow-[0_0_12px_rgba(10,132,255,0.4)] border border-blue-400/30'
+          : 'text-white/60 hover:text-white hover:bg-white/10'"
       >
-        <div
-          v-if="isDocActive"
-          class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]"
-        ></div>
-        <BookOpen class="w-5 h-5" />
+        <Globe class="w-4 h-4" />
       </NuxtLink>
-    </div>
 
-    <!-- Bottom Action Icons -->
-    <div class="flex flex-col items-center gap-1 w-full">
-      <!-- Shortcuts Dialog Trigger -->
+      <!-- Documentation Link -->
+      <NuxtLink
+        to="/docs"
+        title="Documentation & Guide"
+        class="w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-90 cursor-pointer"
+        :class="isDocActive
+          ? 'bg-blue-500/25 text-[#0A84FF] shadow-[0_0_12px_rgba(10,132,255,0.4)] border border-blue-400/30'
+          : 'text-white/60 hover:text-white hover:bg-white/10'"
+      >
+        <BookOpen class="w-4 h-4" />
+      </NuxtLink>
+
+      <!-- Shortcuts Dialog -->
       <button
         @click="emit('toggleShortcuts')"
-        title="Keyboard Shortcuts (Ctrl+K Ctrl+S)"
-        class="w-full h-11 flex items-center justify-center text-[#858585] hover:text-[#cccccc] transition-colors cursor-pointer"
+        title="Keyboard Shortcuts"
+        class="w-10 h-10 rounded-2xl flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-90 cursor-pointer hidden md:flex"
       >
-        <Keyboard class="w-5 h-5" />
-      </button>
-
-      <!-- Settings -->
-      <button
-        @click="handleTabClick('config')"
-        title="Generator Settings"
-        class="w-full h-11 flex items-center justify-center text-[#858585] hover:text-[#cccccc] transition-colors cursor-pointer"
-      >
-        <Settings class="w-5 h-5" />
+        <Keyboard class="w-4 h-4" />
       </button>
     </div>
-  </div>
+  </nav>
 </template>
